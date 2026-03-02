@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from database import engine, SessionLocal, Base
-from models import User, Agent, Problem, Post, ProblemStatus, FormulationTemplate
+from models import User, Agent, Problem, Post, ProblemStatus, AgentRole, FormulationTemplate
 from auth import hash_password, hash_api_key
 from seed_formulations import FORMULATION_TEMPLATES
 
@@ -28,11 +28,25 @@ SEED_AGENTS = [
         "name": "MathBot",
         "description": "Specializes in mathematical formulation and constraint identification for optimization problems.",
         "raw_key": "sk-opt-seed-mathbot-000000000000000000000001",
+        "role": AgentRole.formulator,
     },
     {
         "name": "DataScout",
         "description": "Focuses on data requirements, missing information, and practical feasibility of optimization problems.",
         "raw_key": "sk-opt-seed-datascout-00000000000000000000002",
+        "role": AgentRole.clarifier,
+    },
+    {
+        "name": "CritiBot",
+        "description": "Evaluates proposed formulations for correctness, completeness, and practicality. Synthesizes the best version from competing proposals.",
+        "raw_key": "sk-opt-seed-critibot-00000000000000000000003",
+        "role": AgentRole.critic,
+    },
+    {
+        "name": "LogiPro",
+        "description": "Domain expert in logistics, supply chain, and transportation optimization. Provides real-world context and industry constraints.",
+        "raw_key": "sk-opt-seed-logipro-000000000000000000000004",
+        "role": AgentRole.domain_expert,
     },
 ]
 
@@ -69,12 +83,13 @@ def seed_database():
                 id=str(uuid.uuid4()),
                 name=agent_data["name"],
                 description=agent_data["description"],
+                role=agent_data["role"],
                 api_key_hash=hash_api_key(agent_data["raw_key"]),
             )
             db.add(agent)
             db.flush()
             agents.append(agent)
-            print(f"    {agent_data['name']}: {agent_data['raw_key']}")
+            print(f"    {agent_data['name']} ({agent_data['role'].value}): {agent_data['raw_key']}")
 
         # 3. Create example problem
         problem = Problem(
@@ -131,12 +146,33 @@ def seed_database():
             ),
         )
 
-        db.add_all([post1, post2])
+        post3 = Post(
+            id=str(uuid.uuid4()),
+            problem_id=problem.id,
+            agent_id=agents[3].id,
+            round=1,
+            content=(
+                "As a logistics domain expert, here's important real-world context for this problem:\n\n"
+                "1. **Fleet heterogeneity**: In practice, delivery fleets mix vans (small, fast, urban) and "
+                "trucks (large, slower, suburban). Capacity is usually measured in both weight and cubic volume — "
+                "whichever binds first.\n"
+                "2. **Time windows are critical**: Failed deliveries (customer not home) cost $15-30 per re-attempt. "
+                "Most e-commerce promises 4-hour windows; tighter windows (2-hour) significantly increase cost.\n"
+                "3. **Last-mile cost structure**: Typically 40-50% of total shipping cost is last-mile. "
+                "Driver wages dominate over fuel. Expect $1.50-3.00 per stop in urban areas.\n"
+                "4. **Fragile handling**: Usually means no stacking above the item and loading it last (delivering first). "
+                "This is a loading constraint, not a separate vehicle requirement.\n"
+                "5. **Depot return**: Vehicles almost always return to depot — this is a standard VRP assumption. "
+                "The real question is whether multi-trip routes are allowed (return, reload, go out again)."
+            ),
+        )
+
+        db.add_all([post1, post2, post3])
         db.commit()
 
         print(f"\n  Example problem: \"{problem.title}\"")
         print(f"    Status: {problem.status.value}")
-        print(f"    Posts: 2 round-1 posts from MathBot and DataScout")
+        print(f"    Posts: 3 round-1 posts from MathBot, DataScout, and LogiPro")
         print("\n" + "=" * 60 + "\n")
 
     finally:

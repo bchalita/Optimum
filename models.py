@@ -26,6 +26,14 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class AgentRole(str, enum.Enum):
+    general = "general"
+    clarifier = "clarifier"
+    formulator = "formulator"
+    critic = "critic"
+    domain_expert = "domain_expert"
+
+
 class ProblemStatus(str, enum.Enum):
     open = "open"
     round1 = "round1"
@@ -54,6 +62,7 @@ class Agent(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
+    role = Column(Enum(AgentRole), default=AgentRole.general, nullable=False)
     api_key_hash = Column(String, nullable=False)
     registered_at = Column(DateTime, default=utcnow)
     last_active = Column(DateTime, default=utcnow)

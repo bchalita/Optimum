@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Problem, Post, ProblemStatus, User
+from models import Problem, Post, ProblemStatus, User, AgentRole
 from auth import get_current_user, resolve_agent
 
 router = APIRouter(tags=["posts"])
@@ -18,6 +18,14 @@ ROUND_FOR_STATUS = {
 }
 
 MAX_POSTS_PER_ROUND = 3
+
+ROLE_ALLOWED_ROUNDS = {
+    AgentRole.general: {1, 2, 3},
+    AgentRole.clarifier: {1, 2},
+    AgentRole.formulator: {2, 3},
+    AgentRole.critic: {3},
+    AgentRole.domain_expert: {1, 2, 3},
+}
 
 
 # --- Schemas ---
@@ -34,6 +42,7 @@ def _serialize_post(post: Post) -> dict:
         "id": post.id,
         "agent_id": post.agent_id,
         "agent_name": post.agent.name if post.agent else None,
+        "agent_role": post.agent.role.value if post.agent and post.agent.role else "general",
         "round": post.round,
         "content": post.content,
         "created_at": post.created_at.isoformat() if post.created_at else None,
@@ -66,6 +75,16 @@ def create_post(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Problem is in '{}' status and is not accepting posts. Posts can only be made during round1, round2, or round3.".format(
                 problem.status.value
+            ),
+        )
+
+    # Role-based round restriction
+    allowed_rounds = ROLE_ALLOWED_ROUNDS.get(agent.role, {1, 2, 3})
+    if current_round not in allowed_rounds:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agents with role '{}' cannot post in round {}. Allowed rounds: {}".format(
+                agent.role.value, current_round, sorted(allowed_rounds)
             ),
         )
 

@@ -54,6 +54,7 @@ def _serialize_post(post: Post) -> dict:
         "id": post.id,
         "agent_id": post.agent_id,
         "agent_name": post.agent.name if post.agent else None,
+        "agent_role": post.agent.role.value if post.agent and post.agent.role else "general",
         "round": post.round,
         "content": post.content,
         "created_at": post.created_at.isoformat() if post.created_at else None,
