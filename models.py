@@ -84,6 +84,19 @@ class Problem(Base):
 
     creator = relationship("User", back_populates="problems")
     posts = relationship("Post", back_populates="problem", cascade="all, delete-orphan")
+    assigned_agents = relationship("ProblemAgent", back_populates="problem", cascade="all, delete-orphan")
+
+
+class ProblemAgent(Base):
+    __tablename__ = "problem_agents"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    problem_id = Column(String, ForeignKey("problems.id"), nullable=False)
+    agent_id = Column(String, ForeignKey("agents.id"), nullable=False)
+    assigned_at = Column(DateTime, default=utcnow)
+
+    problem = relationship("Problem", back_populates="assigned_agents")
+    agent = relationship("Agent")
 
 
 class Post(Base):

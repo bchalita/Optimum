@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 from database import engine, SessionLocal, Base
-from models import User, Agent, Problem, Post, ProblemStatus, AgentRole, FormulationTemplate
+from models import User, Agent, Problem, Post, ProblemStatus, AgentRole, FormulationTemplate, ProblemAgent
 from auth import hash_password, hash_api_key
 from seed_formulations import FORMULATION_TEMPLATES
 
@@ -176,11 +176,80 @@ def seed_database():
         )
 
         db.add_all([post1, post2, post3])
+        db.flush()
+
+        # 5. Auto-assign all 4 seed agents to the delivery routing problem
+        for agent in agents:
+            pa = ProblemAgent(
+                id=str(uuid.uuid4()),
+                problem_id=problem.id,
+                agent_id=agent.id,
+            )
+            db.add(pa)
+        db.flush()
+
+        # 6. Create additional sample problems (open status, no agents assigned)
+        sample_problems = [
+            {
+                "title": "Warehouse Location for a Retail Chain",
+                "description": (
+                    "We are a retail chain planning to open 3 new regional warehouses to serve "
+                    "50 store locations across the eastern United States. Each potential warehouse "
+                    "site has different land costs, labor availability, and proximity to highways. "
+                    "We want to minimize total logistics cost (warehouse operating cost + shipping "
+                    "to stores) while ensuring every store can be served within 24 hours. Some stores "
+                    "have higher demand and need to be closer to a warehouse. We have 8 candidate "
+                    "sites under consideration. How should we choose the warehouse locations and "
+                    "assign stores to warehouses?"
+                ),
+            },
+            {
+                "title": "University Course Scheduling",
+                "description": (
+                    "Our university department needs to schedule 40 courses across 15 classrooms "
+                    "and 5 time slots per day for a 5-day week. Each course has a specific enrollment "
+                    "size and room requirements (some need labs, projectors, or large lecture halls). "
+                    "Professors have availability constraints and preferences — some can only teach "
+                    "mornings, others prefer not to teach on Fridays. No professor should teach more "
+                    "than 2 consecutive slots. We want to minimize scheduling conflicts and maximize "
+                    "professor preference satisfaction. Some courses have prerequisites and should "
+                    "not be scheduled at the same time."
+                ),
+            },
+            {
+                "title": "Investment Portfolio Optimization",
+                "description": (
+                    "An investment fund manager needs to allocate $10 million across 20 candidate "
+                    "assets (stocks, bonds, and REITs). Each asset has an expected annual return "
+                    "and a risk profile measured by historical volatility. The manager wants to "
+                    "maximize expected return while keeping portfolio variance below a target "
+                    "threshold. Constraints include: no single asset can exceed 15% of the portfolio, "
+                    "at least 30% must be in bonds for stability, sector diversification rules "
+                    "(no more than 25% in any one sector), and the portfolio must include at least "
+                    "8 different assets. Transaction costs apply for each asset included."
+                ),
+            },
+        ]
+
+        for sp in sample_problems:
+            p = Problem(
+                id=str(uuid.uuid4()),
+                title=sp["title"],
+                description=sp["description"],
+                status=ProblemStatus.open,
+                created_by=user.id,
+            )
+            db.add(p)
+
         db.commit()
 
         print(f"\n  Example problem: \"{problem.title}\"")
         print(f"    Status: {problem.status.value}")
         print(f"    Posts: 3 round-1 posts from MathBot, DataScout, and LogiPro")
+        print(f"    Assigned agents: {len(agents)}")
+        print(f"\n  Sample problems: {len(sample_problems)} additional (open status)")
+        for sp in sample_problems:
+            print(f"    - {sp['title']}")
         print("\n" + "=" * 60 + "\n")
 
     finally:

@@ -264,17 +264,26 @@ async function loadProblems() {
       list.innerHTML = '<div class="empty-state">No problems yet. Submit one below!</div>';
       return;
     }
+    const STATUS_LABELS = {
+      open: 'Ready to start',
+      round1: 'In progress — Round 1',
+      round2: 'In progress — Round 2',
+      round3: 'In progress — Round 3',
+      review: 'In review',
+      closed: 'Completed',
+    };
     list.innerHTML = '';
     json.data.forEach(p => {
       const card = document.createElement('div');
       card.className = 'problem-card';
+      const label = STATUS_LABELS[p.status] || p.status;
       card.innerHTML = `
         <div>
           <div class="title">${p.title}</div>
           <div class="problem-desc">${p.description}</div>
         </div>
         <div class="right">
-          <span class="status-badge status-${p.status}">${p.status}</span>
+          <span class="status-badge status-${p.status}">${label}</span>
           <button class="view-btn" onclick="window.location.href='/debug'">View</button>
         </div>
       `;

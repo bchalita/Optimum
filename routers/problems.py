@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Problem, Post, ProblemStatus, User
+from models import Problem, Post, ProblemStatus, User, Agent, ProblemAgent
 from auth import get_current_user
 
 router = APIRouter(prefix="/problems", tags=["problems"])
@@ -33,6 +33,10 @@ class CreateProblemRequest(BaseModel):
 class FeedbackRequest(BaseModel):
     feedback: str = ""
     approved: bool = False
+
+
+class AssignAgentRequest(BaseModel):
+    agent_id: str
 
 
 # --- Helpers ---
@@ -286,5 +290,122 @@ def reset_problem(
             "message": "Problem reset to round 1. All posts deleted.",
             **_serialize_problem(problem),
         },
+        "error": None,
+    }
+
+
+# --- Agent assignment endpoints ---
+
+def _serialize_agent(agent: Agent) -> dict:
+    return {
+        "id": agent.id,
+        "name": agent.name,
+        "description": agent.description,
+        "role": agent.role.value if agent.role else "general",
+        "model": agent.model,
+    }
+
+
+@router.post("/{problem_id}/agents")
+def assign_agent(
+    problem_id: str,
+    body: AssignAgentRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    problem = _get_problem_or_404(problem_id, db)
+
+    if problem.created_by != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the problem creator can assign agents.",
+        )
+
+    agent = db.query(Agent).filter(Agent.id == body.agent_id).first()
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent '{body.agent_id}' not found.",
+        )
+
+    existing = (
+        db.query(ProblemAgent)
+        .filter(ProblemAgent.problem_id == problem_id, ProblemAgent.agent_id == body.agent_id)
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Agent '{agent.name}' is already assigned to this problem.",
+        )
+
+    pa = ProblemAgent(problem_id=problem_id, agent_id=body.agent_id)
+    db.add(pa)
+    db.commit()
+
+    return {
+        "success": True,
+        "data": _serialize_agent(agent),
+        "error": None,
+    }
+
+
+@router.delete("/{problem_id}/agents/{agent_id}")
+def unassign_agent(
+    problem_id: str,
+    agent_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    problem = _get_problem_or_404(problem_id, db)
+
+    if problem.created_by != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the problem creator can remove agents.",
+        )
+
+    pa = (
+        db.query(ProblemAgent)
+        .filter(ProblemAgent.problem_id == problem_id, ProblemAgent.agent_id == agent_id)
+        .first()
+    )
+    if not pa:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent is not assigned to this problem.",
+        )
+
+    db.delete(pa)
+    db.commit()
+
+    return {
+        "success": True,
+        "data": {"message": "Agent removed from problem."},
+        "error": None,
+    }
+
+
+@router.get("/{problem_id}/agents")
+def list_problem_agents(
+    problem_id: str,
+    db: Session = Depends(get_db),
+):
+    _get_problem_or_404(problem_id, db)
+
+    assignments = (
+        db.query(ProblemAgent)
+        .filter(ProblemAgent.problem_id == problem_id)
+        .all()
+    )
+
+    agents = []
+    for pa in assignments:
+        if pa.agent:
+            agents.append(_serialize_agent(pa.agent))
+
+    return {
+        "success": True,
+        "data": agents,
         "error": None,
     }

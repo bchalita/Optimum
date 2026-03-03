@@ -101,8 +101,9 @@
 
   .empty-state { text-align: center; padding: 30px; color: #484f58; font-size: 0.9em; }
 
-  .header-bar { padding: 12px 16px; border-bottom: 1px solid #30363d; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .header-bar { padding: 12px 16px; border-bottom: 1px solid #30363d; flex-shrink: 0; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px; }
   .header-bar h2 { margin: 0; font-size: 1em; color: #e6edf3; }
+  .header-bar .actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
 
   /* Formulation card in review */
   .formulation-card { background: #0d1117; border: 2px solid #1f6feb; border-radius: 8px; padding: 24px; margin: 16px 0; }
@@ -124,6 +125,7 @@
 <div class="url-bar">
   <input type="text" id="base-url-input" value="http://localhost:8000" placeholder="Backend URL">
   <button class="gray" onclick="refresh()">Connect</button>
+  <select id="problem-select" onchange="selectProblem(this.value)" style="min-width:220px"></select>
 </div>
 
 <div class="grid">
@@ -137,7 +139,7 @@
       <div id="auth-status" style="font-size:0.8em;color:#8b949e;margin-top:4px">Not logged in</div>
     </div>
     <div class="panel" style="margin-bottom:10px">
-      <h2>Agents</h2>
+      <h2 style="display:flex;justify-content:space-between;align-items:center">Agents <button class="blue" style="font-size:0.7em;padding:3px 8px" onclick="assignCheckedAgents()">Assign to Problem</button></h2>
       <div id="agents-list"></div>
     </div>
     <div class="panel" style="margin-bottom:10px">
@@ -158,9 +160,9 @@
     <div class="header-bar">
       <div>
         <h2 id="problem-title">Loading...</h2>
-        <p id="problem-desc" style="font-size:0.8em;color:#8b949e;margin-top:2px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></p>
+        <p id="problem-desc" style="font-size:0.8em;color:#8b949e;margin-top:2px;max-width:600px;line-height:1.5"></p>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <div class="actions">
         <span id="problem-status" class="status-badge"></span>
         <button class="blue" id="advance-btn" onclick="advanceRound()">Advance Round</button>
         <button class="orange" id="run-agents-btn" onclick="runAgentsForRound()">Run Agents (LLM)</button>
@@ -535,7 +537,7 @@ function renderReviewTab() {
   } else if (status === 'closed') {
     html += `<div style="text-align:center;padding:30px;color:#3fb950"><div style="font-size:2em">&#10003;</div><strong>Problem Closed — Formulation Approved</strong></div>`;
   } else if (status === 'open') {
-    html += `<div class="empty-state">Problem not started yet. Advance to begin.</div>`;
+    html += `<div class="empty-state">Problem not started yet. Click "Start (Round 1)" above to begin.</div>`;
   } else {
     html += `<div class="empty-state">Currently in <strong>${status}</strong>. Complete all rounds to reach review.</div>`;
   }
@@ -1082,10 +1084,37 @@ function downloadPDF() {
   log('PDF print dialog opened in new tab', 'success');
 }
 
-async function loadProblem() {
+async function loadProblemList() {
   const problems = await api('GET', '/problems');
   if (!problems || problems.length === 0) return;
-  PROBLEM_ID = problems[0].id;
+  const select = document.getElementById('problem-select');
+  select.innerHTML = '';
+  problems.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = `${p.title} [${p.status}]`;
+    if (p.id === PROBLEM_ID) opt.selected = true;
+    select.appendChild(opt);
+  });
+  if (!PROBLEM_ID) PROBLEM_ID = problems[0].id;
+}
+
+async function selectProblem(id) {
+  PROBLEM_ID = id;
+  CONSOLIDATED = null;
+  VALIDATION_RESULT = null;
+  DEEP_EVALUATION = null;
+  await loadProblem();
+  switchTab(1);
+}
+
+async function loadProblem() {
+  if (!PROBLEM_ID) {
+    const problems = await api('GET', '/problems');
+    if (!problems || problems.length === 0) return;
+    PROBLEM_ID = problems[0].id;
+  }
+  await loadProblemList();
   const data = await api('GET', '/problems/' + PROBLEM_ID);
   if (!data) return;
   PROBLEM_DATA = data;
@@ -1125,9 +1154,13 @@ async function loadProblem() {
   // Enable/disable header buttons based on status
   const advBtn = document.getElementById('advance-btn');
   const runBtn = document.getElementById('run-agents-btn');
-  const canAdvance = ['round1','round2','round3'].includes(data.status);
+  const canAdvance = ['open','round1','round2','round3'].includes(data.status);
   const canRun = ['round1','round2','round3'].includes(data.status);
-  if (advBtn) { advBtn.disabled = !canAdvance; advBtn.title = canAdvance ? '' : `Cannot advance from '${data.status}'`; }
+  if (advBtn) {
+    advBtn.disabled = !canAdvance;
+    advBtn.textContent = data.status === 'open' ? 'Start (Round 1)' : 'Advance Round';
+    advBtn.title = canAdvance ? '' : `Cannot advance from '${data.status}'`;
+  }
   if (runBtn) { runBtn.disabled = !canRun; runBtn.title = canRun ? '' : `No active round in '${data.status}'`; }
 }
 
@@ -1222,6 +1255,10 @@ async function runAgentsForRound() {
   const hf = summary.human_feedback
     ? `\n\n## HUMAN OPERATOR FEEDBACK (address this directly):\n${summary.human_feedback}` : '';
 
+  // Get assigned agents for this problem
+  const assignedAgents = await api('GET', `/problems/${PROBLEM_ID}/agents`);
+  const assignedNames = assignedAgents ? new Set(assignedAgents.map(a => a.name)) : null;
+
   // Get selected agents from checkboxes
   const selectedNames = new Set();
   document.querySelectorAll('.agent-check:checked').forEach(cb => selectedNames.add(cb.dataset.agentName));
@@ -1230,6 +1267,8 @@ async function runAgentsForRound() {
     const key = SEED_KEYS[agent.name];
     if (!key) continue;
     if (!selectedNames.has(agent.name)) { log(`[${agent.name}] not selected`, 'info'); continue; }
+    // If agents are assigned to this problem, only run assigned ones
+    if (assignedNames && assignedNames.size > 0 && !assignedNames.has(agent.name)) { log(`[${agent.name}] not assigned to problem`, 'info'); continue; }
     const allowed = ROLE_ALLOWED_ROUNDS[agent.role] || new Set([1,2,3]);
     if (!allowed.has(currentRound)) { log(`[${agent.name}] skipped (role)`, 'info'); continue; }
 
@@ -1253,6 +1292,24 @@ async function runAgentsForRound() {
 
   btn.disabled = false; btn.textContent = 'Run Agents (LLM)'; RUNNING = false;
   log(`Round ${currentRound} done`, 'success');
+}
+
+async function assignCheckedAgents() {
+  if (!PROBLEM_ID) { log('No problem selected', 'error'); return; }
+  if (!TOKEN) { log('Login first to assign agents', 'error'); return; }
+  const checkedNames = new Set();
+  document.querySelectorAll('.agent-check:checked').forEach(cb => checkedNames.add(cb.dataset.agentName));
+  if (checkedNames.size === 0) { log('No agents checked', 'error'); return; }
+
+  let assigned = 0;
+  for (const agent of AGENTS) {
+    if (!checkedNames.has(agent.name)) continue;
+    try {
+      const res = await api('POST', `/problems/${PROBLEM_ID}/agents`, { agent_id: agent.id }, true);
+      if (res) { assigned++; log(`Assigned ${agent.name}`, 'success'); }
+    } catch (e) { /* duplicate or error — skip */ }
+  }
+  log(`Assigned ${assigned} agent(s) to problem`, assigned > 0 ? 'success' : 'info');
 }
 
 async function refresh() {
