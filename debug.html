@@ -84,11 +84,11 @@
   .agent-row:last-child { border-bottom: none; }
   .agent-row select { width: auto; font-size: 0.8em; padding: 2px 4px; }
   .agent-name { flex: 1; font-weight: 600; }
-  .agent-remove { padding: 2px 8px; font-size: 0.7em; background: #da3633; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-  .agent-remove:hover { background: #f85149; }
-  .agent-remove:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
   .agent-model { font-size: 0.75em; color: #8b949e; font-style: italic; }
   .agent-external { border-left: 2px solid #a371f7; padding-left: 6px; }
+  .agent-delete { background: none; border: none; color: #484f58; cursor: pointer; font-size: 1em; padding: 0 4px; line-height: 1; }
+  .agent-delete:hover { color: #f85149; }
+  .agent-check { accent-color: #58a6ff; }
 
   .feedback-box { background: #2d2200; border: 1px solid #e3b341; border-radius: 6px; padding: 12px; margin: 10px 0; }
   .feedback-box strong { color: #e3b341; }
@@ -181,14 +181,9 @@
 </div>
 
 <script>
-let BASE = window.location.origin || 'http://localhost:8000';
+let BASE = 'http://localhost:8000';
 let TOKEN = null;
 let PROBLEM_ID = null;
-
-function getProblemIdFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get('problem') || null;
-}
 let AGENTS = [];
 let RUNNING = false;
 let CURRENT_TAB = 1;
@@ -305,6 +300,13 @@ async function changeRole(agentId, newRole) {
   if (result) { log(`${result.name} -> ${result.role}`, 'success'); await loadAgents(); }
 }
 
+async function deleteAgent(agentId, agentName) {
+  if (!TOKEN) { log('Login first', 'error'); return; }
+  if (!confirm(`Delete agent "${agentName}"? This also deletes all their posts.`)) return;
+  const result = await api('DELETE', `/agents/${agentId}`, null, true);
+  if (result) { log(`Deleted ${agentName}`, 'success'); await loadAgents(); await loadProblem(); }
+}
+
 async function loadAgents() {
   const data = await api('GET', '/agents');
   if (!data) return;
@@ -319,26 +321,11 @@ async function loadAgents() {
     const modelTag = a.model ? `<span class="agent-model">${a.model}</span>` : '';
     const sourceTag = isSeed ? '' : '<span style="font-size:0.65em;color:#a371f7;margin-left:2px">ext</span>';
     const opts = roles.map(r => `<option value="${r}" ${r===a.role?'selected':''}>${r}</option>`).join('');
-    const removeBtn = TOKEN ? `<button class="agent-remove" type="button" data-agent-id="${a.id}" data-agent-name="${(a.name || '').replace(/"/g, '&quot;')}" title="Remove agent">Remove</button>` : '';
-    list.innerHTML += `<div class="agent-row${externalClass}" data-agent-id="${a.id}"><span class="agent-name">${a.name}${sourceTag}</span>${modelTag}<select onchange="changeRole('${a.id}',this.value)">${opts}</select>${removeBtn}</div>`;
+    const checked = isSeed ? 'checked' : '';
+    const deleteBtn = `<button class="agent-delete" onclick="deleteAgent('${a.id}','${a.name}')" title="Delete">&times;</button>`;
+    list.innerHTML += `<div class="agent-row${externalClass}"><input type="checkbox" class="agent-check" data-agent-name="${a.name}" ${checked} title="Include in Run Agents"><span class="agent-name">${a.name}${sourceTag}</span>${modelTag}<select onchange="changeRole('${a.id}',this.value)">${opts}</select>${deleteBtn}</div>`;
     select.innerHTML += `<option value="${a.name}">${a.name} [${a.role}]</option>`;
   });
-  if (TOKEN) {
-    list.querySelectorAll('.agent-remove').forEach(btn => {
-      btn.addEventListener('click', () => removeAgent(btn.dataset.agentId, btn.dataset.agentName));
-    });
-  }
-}
-
-async function removeAgent(agentId, agentName) {
-  if (!TOKEN) { log('Login first to remove agents', 'error'); return; }
-  if (!confirm(`Remove agent "${agentName}"? Their posts will be deleted. This cannot be undone.`)) return;
-  const result = await api('DELETE', '/agents/' + agentId, null, true);
-  if (result !== undefined && result !== null) {
-    log('Agent removed: ' + agentName, 'success');
-    await loadAgents();
-    await loadProblem();
-  }
 }
 
 // --- Markdown + LaTeX rendering ---
@@ -1096,27 +1083,12 @@ function downloadPDF() {
 }
 
 async function loadProblem() {
-  const urlProblemId = getProblemIdFromUrl();
-  if (urlProblemId) {
-    const data = await api('GET', '/problems/' + urlProblemId);
-    if (data) {
-      PROBLEM_ID = urlProblemId;
-      PROBLEM_DATA = data;
-    }
-  }
-  if (!PROBLEM_ID) {
-    const problems = await api('GET', '/problems');
-    if (!problems || problems.length === 0) return;
-    PROBLEM_ID = problems[0].id;
-    const data = await api('GET', '/problems/' + PROBLEM_ID);
-    if (!data) return;
-    PROBLEM_DATA = data;
-  } else if (!PROBLEM_DATA) {
-    const data = await api('GET', '/problems/' + PROBLEM_ID);
-    if (!data) return;
-    PROBLEM_DATA = data;
-  }
-  const data = PROBLEM_DATA;
+  const problems = await api('GET', '/problems');
+  if (!problems || problems.length === 0) return;
+  PROBLEM_ID = problems[0].id;
+  const data = await api('GET', '/problems/' + PROBLEM_ID);
+  if (!data) return;
+  PROBLEM_DATA = data;
 
   document.getElementById('problem-title').textContent = data.title;
   document.getElementById('problem-desc').textContent = data.description;
@@ -1250,11 +1222,16 @@ async function runAgentsForRound() {
   const hf = summary.human_feedback
     ? `\n\n## HUMAN OPERATOR FEEDBACK (address this directly):\n${summary.human_feedback}` : '';
 
+  // Get selected agents from checkboxes
+  const selectedNames = new Set();
+  document.querySelectorAll('.agent-check:checked').forEach(cb => selectedNames.add(cb.dataset.agentName));
+
   for (const agent of AGENTS) {
     const key = SEED_KEYS[agent.name];
     if (!key) continue;
+    if (!selectedNames.has(agent.name)) { log(`[${agent.name}] not selected`, 'info'); continue; }
     const allowed = ROLE_ALLOWED_ROUNDS[agent.role] || new Set([1,2,3]);
-    if (!allowed.has(currentRound)) { log(`[${agent.name}] skipped`, 'info'); continue; }
+    if (!allowed.has(currentRound)) { log(`[${agent.name}] skipped (role)`, 'info'); continue; }
 
     btn.innerHTML = `${agent.name}... <span class="spinner"></span>`;
     log(`[${agent.name}] Calling OpenAI...`, 'info');

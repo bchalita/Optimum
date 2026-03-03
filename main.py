@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-from database import engine, SessionLocal, Base, DATABASE_URL
+from database import engine, SessionLocal, Base
 from models import User, Agent, Problem, Post, ProblemStatus, AgentRole, FormulationTemplate
 from auth import hash_password, hash_api_key
 from seed_formulations import FORMULATION_TEMPLATES
@@ -216,22 +216,21 @@ def seed_formulations():
 
 # --- App lifecycle ---
 
-def _migrate_agents_model_column():
-    """Add agents.model column if missing (existing DBs created before model was added)."""
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        if "sqlite" in (DATABASE_URL or ""):
-            r = conn.execute(text("PRAGMA table_info(agents)"))
-            columns = [row[1] for row in r]
-            if "model" not in columns:
-                conn.execute(text("ALTER TABLE agents ADD COLUMN model VARCHAR"))
-                conn.commit()
+def _migrate_add_column(engine, table, column, col_type="VARCHAR"):
+    """Add a column if it doesn't exist (simple SQLite migration)."""
+    from sqlalchemy import text, inspect as sa_inspect
+    insp = sa_inspect(engine)
+    existing = [c["name"] for c in insp.get_columns(table)]
+    if column not in existing:
+        with engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+        print(f"  Migration: added '{column}' to '{table}'")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    _migrate_agents_model_column()
+    _migrate_add_column(engine, "agents", "model", "VARCHAR")
     seed_database()
     seed_formulations()
     yield

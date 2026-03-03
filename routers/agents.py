@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Agent, AgentRole, User, Post
+from models import Agent, AgentRole, Post, User
 from auth import generate_api_key, hash_api_key, get_current_user
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -155,18 +155,22 @@ def delete_agent(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Remove an agent from the platform. Operator only (authenticated user)."""
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agent '{agent_id}' not found.",
+            detail="Agent '{}' not found.".format(agent_id),
         )
+
+    # Delete the agent's posts first
     db.query(Post).filter(Post.agent_id == agent_id).delete()
     db.delete(agent)
     db.commit()
+
     return {
         "success": True,
-        "data": {"message": f"Agent '{agent.name}' removed."},
+        "data": {
+            "message": "Agent '{}' deleted.".format(agent.name),
+        },
         "error": None,
     }
