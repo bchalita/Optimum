@@ -63,6 +63,7 @@ class Agent(Base):
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
     role = Column(Enum(AgentRole), default=AgentRole.general, nullable=False)
+    model = Column(String, nullable=True)
     api_key_hash = Column(String, nullable=False)
     registered_at = Column(DateTime, default=utcnow)
     last_active = Column(DateTime, default=utcnow)

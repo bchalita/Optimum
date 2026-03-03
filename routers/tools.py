@@ -1,3 +1,4 @@
+import os
 import re
 from datetime import datetime, timezone
 from typing import Optional
@@ -11,6 +12,66 @@ from models import Problem, Post
 from auth import resolve_agent
 
 router = APIRouter(prefix="/tools", tags=["tools"])
+
+
+# --- LLM proxy for agent simulation ---
+
+
+class GeneratePostRequest(BaseModel):
+    agent_name: str
+    system_prompt: str
+    user_prompt: str
+    max_tokens: int = 800
+    model: str = "gpt-4o"
+
+
+@router.post("/generate-agent-post")
+def generate_agent_post(body: GeneratePostRequest):
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OPENAI_API_KEY not set on server. Run: export OPENAI_API_KEY=sk-...",
+        )
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        model = body.model
+        token_limit = min(body.max_tokens, 16000)
+        print(f"  [LLM] agent={body.agent_name} model={model} max_tokens={token_limit}")
+        # Reasoning models need higher limits and use max_completion_tokens
+        # Non-reasoning models use max_tokens
+        is_reasoning = any(r in model for r in ["o1", "o3", "5.2", "5-2"])
+        create_kwargs = dict(
+            model=model,
+            messages=[
+                {"role": "system", "content": body.system_prompt},
+                {"role": "user", "content": body.user_prompt},
+            ],
+        )
+        if is_reasoning:
+            create_kwargs["max_completion_tokens"] = token_limit
+        else:
+            create_kwargs["max_tokens"] = token_limit
+            create_kwargs["temperature"] = 0.7
+
+        response = client.chat.completions.create(**create_kwargs)
+        content = response.choices[0].message.content.strip()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="OpenAI call failed: {}".format(str(e)),
+        )
+
+    return {
+        "success": True,
+        "data": {
+            "agent_name": body.agent_name,
+            "content": content,
+        },
+        "error": None,
+    }
 
 
 # --- Schemas ---

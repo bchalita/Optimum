@@ -1,0 +1,18 @@
+# Local DB (recreated on deploy)
+optimum.db
+*.db
+
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/

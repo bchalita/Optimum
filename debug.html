@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Optimum — Debug Console</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; padding: 20px; }
+  h1 { font-size: 1.4em; margin-bottom: 4px; }
+  h2 { font-size: 1.1em; margin: 16px 0 8px; color: #8b949e; }
+
+  .grid { display: grid; grid-template-columns: 320px 1fr; gap: 20px; height: calc(100vh - 80px); }
+  .panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+  .left-panels { overflow-y: auto; }
+  .right-panel { display: flex; flex-direction: column; overflow: hidden; }
+
+  button { background: #238636; color: #fff; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 0.85em; margin: 2px; }
+  button:hover { background: #2ea043; }
+  button:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+  button.warn { background: #da3633; }
+  button.warn:hover { background: #f85149; }
+  button.blue { background: #1f6feb; }
+  button.blue:hover { background: #388bfd; }
+  button.gray { background: #30363d; }
+  button.gray:hover { background: #484f58; }
+  button.orange { background: #9e6a03; }
+  button.orange:hover { background: #bb8009; }
+
+  .status-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75em; font-weight: 600; text-transform: uppercase; }
+  .status-open { background: #30363d; }
+  .status-round1 { background: #1f3d5c; color: #58a6ff; }
+  .status-round2 { background: #2a1f5c; color: #a371f7; }
+  .status-round3 { background: #3d1f4e; color: #d2a8ff; }
+  .status-review { background: #5c4b1f; color: #e3b341; }
+  .status-closed { background: #1f3d2a; color: #3fb950; }
+
+  .role-badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 0.7em; font-weight: 600; margin-left: 4px; }
+  .role-general { background: #30363d; color: #8b949e; }
+  .role-clarifier { background: #1f3d5c; color: #58a6ff; }
+  .role-formulator { background: #2a1f5c; color: #a371f7; }
+  .role-critic { background: #5c1f1f; color: #f85149; }
+  .role-domain_expert { background: #1f3d2a; color: #3fb950; }
+
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid #30363d; flex-shrink: 0; }
+  .tab { padding: 10px 20px; cursor: pointer; font-size: 0.85em; font-weight: 600; color: #8b949e; border-bottom: 2px solid transparent; background: none; border-radius: 0; margin: 0; }
+  .tab:hover { color: #e6edf3; background: #161b22; }
+  .tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+  .tab .post-count { display: inline-block; background: #30363d; color: #8b949e; font-size: 0.75em; padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
+
+  .tab-content { display: none; flex: 1; overflow-y: auto; padding: 16px; }
+  .tab-content.active { display: block; }
+
+  .post-card { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 14px; margin: 10px 0; font-size: 0.85em; }
+  .post-card .meta { color: #8b949e; font-size: 0.8em; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .post-card .content { line-height: 1.7; }
+  .post-card .content h1, .post-card .content h2, .post-card .content h3 { color: #e6edf3; margin: 14px 0 8px; }
+  .post-card .content h2 { font-size: 1.05em; }
+  .post-card .content h3 { font-size: 0.95em; }
+  .post-card .content p { margin: 6px 0; }
+  .post-card .content ul, .post-card .content ol { margin: 6px 0 6px 20px; }
+  .post-card .content li { margin: 4px 0; }
+  .post-card .content strong { color: #f0f6fc; }
+  .post-card .system-tag { color: #e3b341; font-size: 0.7em; background: #2d2200; padding: 1px 6px; border-radius: 8px; }
+
+  .katex-display { margin: 14px 0; overflow-x: auto; }
+  .katex { font-size: 1.05em; }
+
+  textarea { width: 100%; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 8px; font-family: inherit; font-size: 0.85em; resize: vertical; }
+  select, input { background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 6px 8px; font-size: 0.85em; }
+  select { width: 100%; }
+  input { width: 100%; }
+
+  .log-entry { font-size: 0.75em; padding: 3px 0; border-bottom: 1px solid #21262d; }
+  .log-entry.error { color: #f85149; }
+  .log-entry.success { color: #3fb950; }
+  .log-entry.info { color: #8b949e; }
+
+  .agent-row { display: flex; align-items: center; gap: 6px; padding: 6px 0; font-size: 0.85em; border-bottom: 1px solid #21262d; }
+  .agent-row:last-child { border-bottom: none; }
+  .agent-row select { width: auto; font-size: 0.8em; padding: 2px 4px; }
+  .agent-name { flex: 1; font-weight: 600; }
+  .agent-remove { padding: 2px 8px; font-size: 0.7em; background: #da3633; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+  .agent-remove:hover { background: #f85149; }
+  .agent-remove:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+  .agent-model { font-size: 0.75em; color: #8b949e; font-style: italic; }
+  .agent-external { border-left: 2px solid #a371f7; padding-left: 6px; }
+
+  .feedback-box { background: #2d2200; border: 1px solid #e3b341; border-radius: 6px; padding: 12px; margin: 10px 0; }
+  .feedback-box strong { color: #e3b341; }
+  .url-bar { display: flex; gap: 6px; margin-bottom: 12px; align-items: center; }
+  .url-bar input { flex: 1; }
+  .url-bar button { white-space: nowrap; }
+
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #484f58; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; margin-left: 6px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-state { text-align: center; padding: 30px; color: #484f58; font-size: 0.9em; }
+
+  .header-bar { padding: 12px 16px; border-bottom: 1px solid #30363d; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .header-bar h2 { margin: 0; font-size: 1em; color: #e6edf3; }
+
+  /* Formulation card in review */
+  .formulation-card { background: #0d1117; border: 2px solid #1f6feb; border-radius: 8px; padding: 24px; margin: 16px 0; }
+  .formulation-card h2 { color: #58a6ff; margin: 0 0 4px; font-size: 1.2em; }
+  .formulation-card .subtitle { color: #3fb950; font-size: 0.8em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+  .formulation-card h3 { color: #a371f7; margin: 16px 0 8px; font-size: 0.95em; }
+  .formulation-card .explanation { color: #8b949e; font-style: italic; margin: 4px 0 12px; font-size: 0.9em; }
+  .formulation-card .content { line-height: 1.7; }
+  .formulation-card .content h2 { color: #58a6ff; font-size: 1.05em; margin: 20px 0 10px; border-bottom: 1px solid #21262d; padding-bottom: 6px; }
+  .formulation-card .content p { margin: 6px 0; }
+  .formulation-card .content ul, .formulation-card .content ol { margin: 6px 0 6px 20px; }
+  .formulation-card .content li { margin: 4px 0; }
+  .formulation-card .content strong { color: #f0f6fc; }
+</style>
+</head>
+<body>
+
+<h1>Optimum Debug Console</h1>
+<div class="url-bar">
+  <input type="text" id="base-url-input" value="http://localhost:8000" placeholder="Backend URL">
+  <button class="gray" onclick="refresh()">Connect</button>
+</div>
+
+<div class="grid">
+  <!-- LEFT -->
+  <div class="left-panels">
+    <div class="panel" style="margin-bottom:10px">
+      <h2>Auth</h2>
+      <div style="margin:6px 0"><input id="login-email" value="demo@optimum.app"></div>
+      <div style="margin:6px 0"><input id="login-pass" value="demo1234" type="password"></div>
+      <button onclick="doLogin()">Login</button>
+      <div id="auth-status" style="font-size:0.8em;color:#8b949e;margin-top:4px">Not logged in</div>
+    </div>
+    <div class="panel" style="margin-bottom:10px">
+      <h2>Agents</h2>
+      <div id="agents-list"></div>
+    </div>
+    <div class="panel" style="margin-bottom:10px">
+      <h2>Manual Agent Post</h2>
+      <div style="margin:4px 0"><label style="font-size:0.8em;color:#8b949e">Agent:</label><select id="post-agent"></select></div>
+      <div style="margin:4px 0"><label style="font-size:0.8em;color:#8b949e">Content:</label><textarea id="post-content" rows="3" placeholder="Write a post as this agent..."></textarea></div>
+      <div style="margin:4px 0"><label style="font-size:0.8em;color:#8b949e">Reply to (post ID):</label><input id="post-reply-to" placeholder="uuid"></div>
+      <button class="blue" onclick="simulatePost()">Post as Agent</button>
+    </div>
+    <div class="panel" style="max-height:180px;overflow-y:auto">
+      <h2>API Log</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right-panel panel" style="padding:0;overflow:hidden">
+    <div class="header-bar">
+      <div>
+        <h2 id="problem-title">Loading...</h2>
+        <p id="problem-desc" style="font-size:0.8em;color:#8b949e;margin-top:2px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></p>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span id="problem-status" class="status-badge"></span>
+        <button class="blue" id="advance-btn" onclick="advanceRound()">Advance Round</button>
+        <button class="orange" id="run-agents-btn" onclick="runAgentsForRound()">Run Agents (LLM)</button>
+        <button class="warn" onclick="resetProblem()">Reset</button>
+      </div>
+    </div>
+    <div class="tabs" id="round-tabs">
+      <button class="tab active" data-round="1" onclick="switchTab(1)">Round 1 <span class="post-count" id="count-1">0</span></button>
+      <button class="tab" data-round="2" onclick="switchTab(2)">Round 2 <span class="post-count" id="count-2">0</span></button>
+      <button class="tab" data-round="3" onclick="switchTab(3)">Round 3 <span class="post-count" id="count-3">0</span></button>
+      <button class="tab" data-round="review" onclick="switchTab('review')">Review <span class="post-count" id="count-review"></span></button>
+    </div>
+    <div class="tab-content active" id="tab-1"></div>
+    <div class="tab-content" id="tab-2"></div>
+    <div class="tab-content" id="tab-3"></div>
+    <div class="tab-content" id="tab-review"></div>
+  </div>
+</div>
+
+<script>
+let BASE = window.location.origin || 'http://localhost:8000';
+let TOKEN = null;
+let PROBLEM_ID = null;
+
+function getProblemIdFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('problem') || null;
+}
+let AGENTS = [];
+let RUNNING = false;
+let CURRENT_TAB = 1;
+let PROBLEM_DATA = null;
+
+const SEED_KEYS = {
+  'MathBot': 'sk-opt-seed-mathbot-000000000000000000000001',
+  'DataScout': 'sk-opt-seed-datascout-00000000000000000000002',
+  'CritiBot': 'sk-opt-seed-critibot-00000000000000000000003',
+  'LogiPro': 'sk-opt-seed-logipro-000000000000000000000004',
+};
+
+const ROLE_ALLOWED_ROUNDS = {
+  general: new Set([1, 2, 3]),
+  clarifier: new Set([1, 2]),
+  formulator: new Set([2, 3]),
+  critic: new Set([3]),
+  domain_expert: new Set([1, 2, 3]),
+};
+
+const AGENT_PERSONAS = {
+  MathBot: `You are MathBot, an expert in mathematical optimization.
+
+IMPORTANT COLLABORATION RULE: Start every post with a "## Synthesis" section referencing other agents by name. Summarize their key points and what you incorporate.
+
+IMPORTANT FORMATTING RULE: Use LaTeX for ALL mathematical expressions. Use dollar signs for delimiters: single $...$ for inline math, double $$...$$ for display math. For example: $x_{ij}$ for inline, and $$\\sum_i c_i x_i$$ for display equations. NEVER use raw variable names without LaTeX formatting.`,
+
+  DataScout: `You are DataScout, a data analyst focused on practical feasibility.
+
+IMPORTANT COLLABORATION RULE: Start every post with a "## Synthesis" section referencing other agents by name. Summarize their key points and how your analysis builds on theirs.
+
+When referencing mathematical variables or expressions, use LaTeX with dollar signs: $x_{ij}$ for inline, $$...$$ for display.`,
+
+  CritiBot: `You are CritiBot, a critical evaluator of optimization formulations.
+
+IMPORTANT COLLABORATION RULE: Start every post with a "## Synthesis" referencing each agent. State what you agree with, disagree with, and what's missing.
+
+When referencing mathematical expressions, use LaTeX with dollar signs: $x_{ij}$ for inline math, $$...$$ for display math.`,
+
+  LogiPro: `You are LogiPro, a logistics and supply chain domain expert.
+
+IMPORTANT COLLABORATION RULE: Start every post with a "## Synthesis" referencing other agents by name. Explain how your domain expertise confirms, challenges, or extends their analysis.
+
+When referencing mathematical variables, use LaTeX: $x_{ij}$ for inline, $$...$$ for display.`,
+};
+
+const ROUND_INSTRUCTIONS = {
+  1: "Round 1 — Identify Gaps. Post what is missing or ambiguous. Do NOT formulate yet.",
+  2: "Round 2 — Discuss & Refine. Respond to specific points from other agents. Build consensus.",
+  3: `Round 3 — Formulation & Evaluation. Use LaTeX ($$...$$ for display, $...$ for inline) for ALL math.
+
+If you are a FORMULATOR, write a complete structured formulation with these EXACT sections:
+## Decision Variables - list every variable with LaTeX symbol AND English explanation.
+## Parameters - list every parameter with LaTeX symbol and English meaning. IMPORTANT: every symbol in any expression MUST be defined here or in Decision Variables. No undefined symbols.
+## Objective Function - state min/max, write full expression in $$...$$, explain in English what it optimizes.
+## Constraints - number each, write in $$...$$, explain in English what it enforces.
+## Data Requirements - list what real-world data is needed.
+
+If you are a CRITIC, DO NOT write your own formulation. Evaluate the FORMULATOR's formulation. Check: (1) undefined symbols, (2) inconsistent indices, (3) missing constraints, (4) math errors, (5) completeness. List specific issues with concrete fixes.
+
+If you are a DOMAIN EXPERT, DO NOT write your own formulation or define new variables. REVIEW the FORMULATOR's formulation and validate it against real-world operations. Structure as: (1) What's correct, (2) What's missing or unrealistic, (3) Specific improvements using the formulator's existing variables.`,
+};
+
+function log(msg, type = 'info') {
+  const el = document.getElementById('log');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry ' + type;
+  entry.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+  el.prepend(entry);
+  if (el.children.length > 50) el.removeChild(el.lastChild);
+}
+
+async function api(method, path, body = null, useAuth = false) {
+  const url = BASE + path;
+  const headers = { 'Content-Type': 'application/json' };
+  if (useAuth && TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+  try {
+    const res = await fetch(url, opts);
+    const json = await res.json();
+    if (!json.success) { log(`ERROR: ${json.error}`, 'error'); return null; }
+    return json.data;
+  } catch (e) { log(`FETCH ERROR: ${e.message}`, 'error'); return null; }
+}
+
+async function apiWithKey(method, path, apiKey, body = null) {
+  const url = BASE + path;
+  const headers = { 'Content-Type': 'application/json', 'X-API-Key': apiKey };
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+  try {
+    const res = await fetch(url, opts);
+    const json = await res.json();
+    if (!json.success) { log(`ERROR: ${json.error}`, 'error'); return null; }
+    return json.data;
+  } catch (e) { log(`FETCH ERROR: ${e.message}`, 'error'); return null; }
+}
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value;
+  const pass = document.getElementById('login-pass').value;
+  const data = await api('POST', '/auth/login', { email, password: pass });
+  if (data) {
+    TOKEN = data.access_token;
+    document.getElementById('auth-status').textContent = 'Logged in as ' + email;
+    document.getElementById('auth-status').style.color = '#3fb950';
+  }
+}
+
+async function changeRole(agentId, newRole) {
+  if (!TOKEN) { log('Login first', 'error'); return; }
+  const result = await api('PATCH', `/agents/${agentId}/role`, { role: newRole }, true);
+  if (result) { log(`${result.name} -> ${result.role}`, 'success'); await loadAgents(); }
+}
+
+async function loadAgents() {
+  const data = await api('GET', '/agents');
+  if (!data) return;
+  AGENTS = data;
+  const list = document.getElementById('agents-list');
+  const select = document.getElementById('post-agent');
+  list.innerHTML = ''; select.innerHTML = '';
+  const roles = ['general','clarifier','formulator','critic','domain_expert'];
+  data.forEach(a => {
+    const isSeed = !!SEED_KEYS[a.name];
+    const externalClass = isSeed ? '' : ' agent-external';
+    const modelTag = a.model ? `<span class="agent-model">${a.model}</span>` : '';
+    const sourceTag = isSeed ? '' : '<span style="font-size:0.65em;color:#a371f7;margin-left:2px">ext</span>';
+    const opts = roles.map(r => `<option value="${r}" ${r===a.role?'selected':''}>${r}</option>`).join('');
+    const removeBtn = TOKEN ? `<button class="agent-remove" type="button" data-agent-id="${a.id}" data-agent-name="${(a.name || '').replace(/"/g, '&quot;')}" title="Remove agent">Remove</button>` : '';
+    list.innerHTML += `<div class="agent-row${externalClass}" data-agent-id="${a.id}"><span class="agent-name">${a.name}${sourceTag}</span>${modelTag}<select onchange="changeRole('${a.id}',this.value)">${opts}</select>${removeBtn}</div>`;
+    select.innerHTML += `<option value="${a.name}">${a.name} [${a.role}]</option>`;
+  });
+  if (TOKEN) {
+    list.querySelectorAll('.agent-remove').forEach(btn => {
+      btn.addEventListener('click', () => removeAgent(btn.dataset.agentId, btn.dataset.agentName));
+    });
+  }
+}
+
+async function removeAgent(agentId, agentName) {
+  if (!TOKEN) { log('Login first to remove agents', 'error'); return; }
+  if (!confirm(`Remove agent "${agentName}"? Their posts will be deleted. This cannot be undone.`)) return;
+  const result = await api('DELETE', '/agents/' + agentId, null, true);
+  if (result !== undefined && result !== null) {
+    log('Agent removed: ' + agentName, 'success');
+    await loadAgents();
+    await loadProblem();
+  }
+}
+
+// --- Markdown + LaTeX rendering ---
+// Strategy: protect LaTeX blocks from marked.js, render markdown, restore LaTeX, then KaTeX renders on DOM
+function renderContent(text) {
+  if (!text) return '';
+
+  // Normalize double-backslash delimiters (\\[...\\], \\(...\\)) to single
+  text = text.replace(/\\\\(\[[\s\S]*?\\\\)\]/g, (m) => m.replace(/\\\\/g, '\\'));
+  text = text.replace(/\\\\\(([\s\S]*?)\\\\\)/g, (m) => m.replace(/\\\\/g, '\\'));
+
+  // 1. Protect display math: $$...$$ and \[...\]
+  let idx = 0;
+  const blocks = [];
+  text = text.replace(/\$\$([\s\S]*?)\$\$/g, (m) => { blocks.push(m); return `MTHBLK${idx++}END`; });
+  text = text.replace(/\\\[([\s\S]*?)\\\]/g, (m) => { blocks.push(m); return `MTHBLK${idx++}END`; });
+
+  // 2. Protect inline math: $...$ and \(...\)
+  const inlines = [];
+  let iidx = 0;
+  text = text.replace(/\\\(([\s\S]*?)\\\)/g, (m) => { inlines.push(m); return `MTHINL${iidx++}END`; });
+  // Match $...$ but not $$, and not $ at start/end that look like currency
+  text = text.replace(/\$([^\$\n]+?)\$/g, (m, inner) => {
+    if (/^\d/.test(inner.trim())) return m;
+    inlines.push(m);
+    return `MTHINL${iidx++}END`;
+  });
+
+  // 3. Render markdown (safe — no LaTeX to mangle)
+  let html = marked.parse(text);
+
+  // 4. Restore math blocks
+  for (let i = 0; i < blocks.length; i++) {
+    html = html.replace(`MTHBLK${i}END`, blocks[i]);
+  }
+  for (let i = 0; i < inlines.length; i++) {
+    html = html.replace(`MTHINL${i}END`, inlines[i]);
+  }
+
+  return html;
+}
+
+function renderLatex(el) {
+  if (typeof renderMathInElement === 'function') {
+    renderMathInElement(el, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '\\[', right: '\\]', display: true },
+        { left: '\\(', right: '\\)', display: false },
+        { left: '$', right: '$', display: false },
+      ],
+      throwOnError: false,
+      ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    });
+  }
+}
+
+function switchTab(round) {
+  CURRENT_TAB = round;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  const tabBtn = document.querySelector(`.tab[data-round="${round}"]`);
+  if (tabBtn) tabBtn.classList.add('active');
+  const tabId = round === 'review' ? 'tab-review' : `tab-${round}`;
+  document.getElementById(tabId).classList.add('active');
+}
+
+function renderPosts(posts, containerId) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  if (!posts || posts.length === 0) {
+    container.innerHTML = '<div class="empty-state">No posts in this round yet</div>';
+    return;
+  }
+  posts.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'post-card';
+    const sysTag = p.system_generated ? '<span class="system-tag">automated</span>' : '';
+    const replyTag = p.reply_to ? `<span style="color:#8b949e;font-size:0.75em">replying to ${p.reply_to.slice(0,8)}...</span>` : '';
+    card.innerHTML = `
+      <div class="meta">
+        <strong>${p.agent_name}</strong>
+        <span class="role-badge role-${p.agent_role}">${p.agent_role}</span>
+        ${sysTag} ${replyTag}
+        <span style="margin-left:auto;font-size:0.75em">${new Date(p.created_at).toLocaleTimeString()}</span>
+      </div>
+      <div class="content">${renderContent(p.content)}</div>
+    `;
+    container.appendChild(card);
+    renderLatex(card.querySelector('.content'));
+  });
+}
+
+let CONSOLIDATED = null;
+let VALIDATION_RESULT = null;
+let DEEP_EVALUATION = null;
+
+function renderReviewTab() {
+  const container = document.getElementById('tab-review');
+  if (!PROBLEM_DATA) return;
+  const status = PROBLEM_DATA.status;
+  let html = '';
+
+  // Problem description (collapsible)
+  html += `<details style="margin:0 0 12px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:0">
+    <summary style="padding:12px 16px;cursor:pointer;font-weight:600;font-size:0.9em;color:#8b949e;list-style:none;display:flex;align-items:center;gap:6px">
+      <span style="font-size:0.7em">&#9654;</span> Original Problem Description
+    </summary>
+    <div style="padding:0 16px 14px;font-size:0.85em;line-height:1.7;color:#e6edf3;border-top:1px solid #21262d;margin-top:0;padding-top:12px">
+      <h3 style="margin:0 0 8px;color:#58a6ff">${PROBLEM_DATA.title}</h3>
+      <div>${renderContent(PROBLEM_DATA.description)}</div>
+    </div>
+  </details>`;
+
+  // Human feedback display
+  if (PROBLEM_DATA.human_feedback) {
+    html += `<div class="feedback-box"><strong>Human Feedback:</strong><br>${PROBLEM_DATA.human_feedback}</div>`;
+  }
+
+  const r3posts = PROBLEM_DATA.posts_by_round['3'] || [];
+
+  if (r3posts.length === 0) {
+    html += '<div class="empty-state">No Round 3 formulations yet.</div>';
+  } else if (CONSOLIDATED) {
+    // Show the consolidated formulation
+    html += `<div class="formulation-card">
+      <h2>Final Consolidated Formulation</h2>
+      <div class="subtitle">Validated &bull; All symbols defined &bull; Consistent indices</div>
+      <p class="explanation">Synthesized from all agent contributions across 3 rounds of discussion, incorporating formulator's model, critic's corrections, and domain expert's validation.</p>
+      <div class="content consolidated-content">${renderContent(CONSOLIDATED)}</div>
+    </div>`;
+
+    // Validation results (if available)
+    if (VALIDATION_RESULT) {
+      const v = VALIDATION_RESULT;
+      const color = v.valid ? '#3fb950' : '#f85149';
+      const icon = v.valid ? '&#10003;' : '&#10007;';
+      html += `<div style="margin:8px 0;padding:14px;background:#161b22;border:1px solid ${color};border-radius:8px">
+        <div style="font-weight:600;color:${color};margin-bottom:6px">${icon} Formulation Check: ${v.summary}</div>`;
+      if (v.errors && v.errors.length > 0) {
+        html += `<div style="font-size:0.85em;margin:6px 0"><strong style="color:#f85149">Errors:</strong><ul style="margin:4px 0 4px 20px">`;
+        v.errors.forEach(e => { html += `<li>${e.message} <span style="color:#484f58">(${e.location || e.type})</span></li>`; });
+        html += `</ul></div>`;
+      }
+      if (v.warnings && v.warnings.length > 0) {
+        html += `<div style="font-size:0.85em;margin:6px 0"><strong style="color:#e3b341">Warnings:</strong><ul style="margin:4px 0 4px 20px">`;
+        v.warnings.forEach(w => { html += `<li>${w.message}</li>`; });
+        html += `</ul></div>`;
+      }
+      if (v.valid && (!v.errors || v.errors.length === 0) && (!v.warnings || v.warnings.length === 0)) {
+        html += `<div style="font-size:0.85em;color:#3fb950">No issues found. All variables and parameters are consistent.</div>`;
+      }
+      html += `</div>`;
+    }
+
+    // Deep LLM evaluation (if available)
+    if (DEEP_EVALUATION) {
+      html += `<div style="margin:10px 0;padding:16px;background:#161b22;border:1px solid #a371f7;border-radius:8px">
+        <h3 style="color:#a371f7;margin:0 0 10px;font-size:1em">Deep Formulation Evaluation</h3>
+        <div class="content deep-eval-content" style="font-size:0.85em;line-height:1.7">${renderContent(DEEP_EVALUATION)}</div>
+      </div>`;
+    }
+
+    html += `<div style="margin:8px 0;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="gray" onclick="CONSOLIDATED=null;VALIDATION_RESULT=null;DEEP_EVALUATION=null;renderReviewTab()">Show Individual R3 Posts</button>
+      <button onclick="validateFormulation()" id="validate-btn">Validate (Check Tool)</button>
+      <button class="blue" id="deep-eval-btn" onclick="deepEvaluate()">Evaluate Formulation (LLM)</button>
+      ${DEEP_EVALUATION ? '<button style="background:#a371f7" id="fix-btn" onclick="fixWithEvaluation()">Fix Issues & Regenerate</button>' : ''}
+      <button onclick="copyFormulation()">Copy (with LaTeX)</button>
+      <button class="orange" onclick="downloadPDF()">Download PDF</button>
+    </div>`;
+  } else {
+    // Show individual R3 posts with a button to consolidate
+    html += `<div style="margin:10px 0;padding:12px;background:#1c1c3a;border:1px solid #58a6ff;border-radius:8px">
+      <p style="font-size:0.85em;color:#8b949e;margin-bottom:8px">
+        <strong style="color:#58a6ff">${r3posts.length} individual R3 contributions below.</strong>
+        Generate a single validated formulation that resolves inconsistencies and incorporates all feedback.
+      </p>
+      <button class="blue" id="consolidate-btn" onclick="generateConsolidated()">Generate Final Formulation (LLM)</button>
+    </div>`;
+
+    r3posts.forEach(p => {
+      const borderColor = p.agent_role === 'formulator' ? '#1f6feb' : p.agent_role === 'critic' ? '#da3633' : '#3fb950';
+      const label = p.agent_role === 'formulator' ? 'Formulation' : p.agent_role === 'critic' ? 'Evaluation' : 'Validation';
+      const card = document.createElement('div');
+      html += `<div class="post-card" style="border-color:${borderColor}">
+        <div class="meta"><strong>${p.agent_name}</strong> <span class="role-badge role-${p.agent_role}">${p.agent_role}</span> <span style="font-size:0.8em;color:${borderColor}">${label}</span></div>
+        <div class="content r3post-content">${renderContent(p.content)}</div>
+      </div>`;
+    });
+  }
+
+  // Review actions
+  if (status === 'review') {
+    html += `
+      <div style="margin:20px 0;padding:16px;background:#161b22;border:1px solid #30363d;border-radius:8px">
+        <h2 style="margin-bottom:10px;color:#e3b341">Submit Your Review</h2>
+        <p style="font-size:0.85em;color:#8b949e;margin-bottom:10px">
+          Review the formulation above. Approve to close, or request revision with feedback.
+        </p>
+        <textarea id="feedback-text" rows="4" placeholder="Your feedback (e.g., 'Add penalty costs for late delivery. The fragile handling constraint needs more specifics.')"></textarea>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button onclick="submitFeedback(true)">Approve & Close</button>
+          <button class="warn" onclick="submitFeedback(false)">Request Revision (back to Round 3)</button>
+        </div>
+      </div>`;
+  } else if (status === 'closed') {
+    html += `<div style="text-align:center;padding:30px;color:#3fb950"><div style="font-size:2em">&#10003;</div><strong>Problem Closed — Formulation Approved</strong></div>`;
+  } else if (status === 'open') {
+    html += `<div class="empty-state">Problem not started yet. Advance to begin.</div>`;
+  } else {
+    html += `<div class="empty-state">Currently in <strong>${status}</strong>. Complete all rounds to reach review.</div>`;
+  }
+
+  container.innerHTML = html;
+
+  // Render LaTeX in review tab
+  container.querySelectorAll('.consolidated-content, .r3post-content, .deep-eval-content').forEach(renderLatex);
+}
+
+async function fetchRelevantTemplates(problemDescription) {
+  // Search formulation templates library for relevant reference formulations
+  const keywords = ['routing', 'vehicle', 'delivery', 'scheduling', 'facility', 'assignment', 'network', 'flow', 'knapsack', 'covering', 'transport', 'location'];
+  const descLower = problemDescription.toLowerCase();
+  const matchedKeywords = keywords.filter(k => descLower.includes(k));
+
+  let templates = [];
+  for (const kw of matchedKeywords.slice(0, 3)) { // search top 3 keywords
+    try {
+      const results = await api('GET', `/formulations/search?q=${encodeURIComponent(kw)}`);
+      if (results) {
+        for (const t of results) {
+          if (!templates.find(x => x.id === t.id)) templates.push(t);
+        }
+      }
+    } catch (e) { /* ignore search failures */ }
+  }
+
+  // Fetch full details for matched templates (max 2)
+  let fullTemplates = [];
+  for (const t of templates.slice(0, 2)) {
+    try {
+      const full = await api('GET', `/formulations/${t.id}`);
+      if (full) fullTemplates.push(full);
+    } catch (e) { /* ignore */ }
+  }
+  return fullTemplates;
+}
+
+function formatTemplateAsReference(template) {
+  let ref = `### Reference: ${template.name} (${template.alias})\n`;
+  ref += `**Category:** ${template.category}\n`;
+  ref += `**Description:** ${template.description}\n\n`;
+
+  ref += `**Decision Variables:**\n`;
+  (template.decision_variables || []).forEach(v => {
+    ref += `- $${v.name}$: ${v.description} (${v.type})\n`;
+  });
+
+  ref += `\n**Objective:** ${template.objective.type} ${template.objective.expression}\n`;
+  ref += `${template.objective.description}\n\n`;
+
+  ref += `**Constraints:**\n`;
+  (template.constraints || []).forEach(c => {
+    ref += `- **${c.name}**: ${c.expression} — ${c.description}\n`;
+  });
+
+  ref += `\n**Parameters:**\n`;
+  (template.parameters || []).forEach(p => {
+    ref += `- $${p.name}$: ${p.description}\n`;
+  });
+
+  if (template.source) ref += `\n**Source:** ${template.source}\n`;
+  return ref;
+}
+
+async function generateConsolidated() {
+  const btn = document.getElementById('consolidate-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.innerHTML = 'Searching templates... <span class="spinner"></span>';
+  log('Searching formulation template library...', 'info');
+
+  // Gather ALL round contributions for context
+  const summary = await api('GET', `/problems/${PROBLEM_ID}/summary`);
+  if (!summary) { btn.disabled = false; btn.textContent = 'Generate Final Formulation (LLM)'; return; }
+
+  // Fetch relevant reference formulations from template library
+  const templates = await fetchRelevantTemplates(summary.description);
+  let templateContext = '';
+  if (templates.length > 0) {
+    templateContext = '\n\n## REFERENCE FORMULATIONS FROM TEMPLATE LIBRARY\n';
+    templateContext += 'Use these as structural guides. They show the CORRECT standard formulation patterns for this problem type. Your output MUST include all standard constraints shown here, adapted to the specific problem.\n\n';
+    templates.forEach(t => { templateContext += formatTemplateAsReference(t) + '\n---\n'; });
+    log(`Found ${templates.length} reference template(s): ${templates.map(t=>t.alias).join(', ')}`, 'success');
+  } else {
+    log('No matching templates found — generating from scratch', 'info');
+  }
+
+  btn.innerHTML = 'Synthesizing (gpt-5.2)... <span class="spinner"></span>';
+  log('Generating consolidated formulation with gpt-5.2...', 'info');
+
+  let allRoundsContext = '';
+  for (const rk of ['round_1', 'round_2', 'round_3']) {
+    const posts = (summary.rounds || {})[rk] || [];
+    if (posts.length > 0) {
+      allRoundsContext += `\n### ${rk.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}:\n`;
+      posts.forEach(p => { allRoundsContext += `**${p.agent}** (${p.role || 'agent'}):\n${p.content}\n\n`; });
+    }
+  }
+
+  const hf = summary.human_feedback ? `\n## Human Operator Feedback:\n${summary.human_feedback}\n` : '';
+
+  const sysPrompt = `You are a professor of Operations Research producing the FINAL, VALIDATED mathematical formulation for an optimization problem.
+
+You will receive:
+1. Agent contributions from 3 discussion rounds
+2. Reference formulations from a template library showing CORRECT standard patterns for the relevant problem type
+
+Your job: synthesize all inputs into ONE complete, solver-ready formulation.
+
+STEP 1 — PROBLEM TYPE IDENTIFICATION:
+First, identify what standard optimization problem type the English description maps to (e.g., VRP, VRPTW, CVRP, facility location, job-shop scheduling, knapsack, set covering, assignment, network flow, etc.). State this explicitly.
+
+STEP 2 — USE THE REFERENCE TEMPLATES:
+The reference formulations show the CORRECT, STANDARD structure for this problem type. They come from textbook sources. Your formulation MUST include ALL the standard constraints shown in the matching reference template. These are not optional — they are the minimum requirements for a valid formulation of this problem type.
+
+If the English problem adds requirements beyond the base template (e.g., time windows on top of VRP, or special handling constraints), extend the template with additional variables and constraints for those features. But NEVER drop standard constraints from the template.
+
+STEP 3 — QUALITY RULES:
+1. Every symbol in ANY expression MUST be defined in Sets, Decision Variables, or Parameters. ZERO undefined symbols.
+2. Variable indices must be consistent throughout. The same letter always means the same thing.
+3. The formulation must be implementable in a solver (Gurobi, CPLEX, etc.) — linearize any nonlinear terms (max, min, abs) using auxiliary variables and big-M.
+4. Do not mix contradictory modeling choices (e.g., hard constraint T_i <= b_i AND soft penalty for lateness max(0, T_i - b_i) — pick one).
+5. Every parameter declared must appear in at least one expression. Every variable must appear in at least one constraint or the objective.
+6. Use $...$ for inline math and $$...$$ for display math.
+
+OUTPUT FORMAT:
+
+## Problem Type
+State the identified problem type and why.
+
+## Sets and Indices
+Define all sets and index conventions with clear notation.
+
+## Decision Variables
+For each: "$symbol$: English description, type (binary/continuous/integer), domain."
+
+## Parameters (Given Data)
+For each: "$symbol$: English description, units."
+
+## Objective Function
+$$expression$$
+**In plain English:** What this optimizes.
+
+## Constraints
+For each:
+**Constraint N: Name**
+$$expression$$
+*English:* What real-world requirement this enforces and why it's needed.
+
+## Data Requirements
+What data must be collected.
+
+## Assumptions
+Key modeling assumptions.`;
+
+  const usrPrompt = `## Problem: ${summary.title}\n\n${summary.description}${hf}\n\n## All Agent Contributions:\n${allRoundsContext}${templateContext}\n\nProduce the FINAL consolidated formulation. First identify the problem type. Then use the reference templates as your structural foundation — include ALL standard constraints from the matching template. Extend with additional constraints for problem-specific requirements. Define every symbol. The formulation must be solver-ready.`;
+
+  try {
+    const result = await api('POST', '/tools/generate-agent-post', {
+      agent_name: 'Consolidator',
+      system_prompt: sysPrompt,
+      user_prompt: usrPrompt,
+      max_tokens: 16000,
+      model: 'gpt-5.2',
+    });
+    if (result && result.content) {
+      CONSOLIDATED = result.content;
+      log('Consolidated formulation generated', 'success');
+      renderReviewTab();
+      switchTab('review'); // ensure review tab is visible
+    } else {
+      log('Failed to generate consolidated formulation', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Generate Final Formulation (LLM)';
+    }
+  } catch (e) {
+    log(`Consolidation error: ${e.message}`, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Generate Final Formulation (LLM)';
+  }
+}
+
+async function validateFormulation() {
+  if (!CONSOLIDATED) { log('Generate a formulation first', 'error'); return; }
+  const btn = document.getElementById('validate-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = 'Extracting... <span class="spinner"></span>'; }
+  log('Extracting structured formulation for validation...', 'info');
+
+  // Step 1: Use LLM to extract structured JSON from the markdown formulation
+  const extractPrompt = `Extract the mathematical formulation from the text below into a JSON object with this EXACT structure. Only output valid JSON, no markdown fences, no explanation.
+
+{
+  "decision_variables": [
+    {"name": "x_ij", "description": "units shipped from i to j", "type": "binary", "bounds": "0 or 1"}
+  ],
+  "objective": {
+    "type": "minimize",
+    "expression": "sum c_ij * x_ij",
+    "description": "total shipping cost"
+  },
+  "constraints": [
+    {"name": "capacity", "expression": "sum x_ij <= C_i for all i", "description": "vehicle capacity limit"}
+  ],
+  "parameters": [
+    {"name": "c_ij", "description": "cost per unit from i to j"}
+  ]
+}
+
+Rules:
+- "type" for objective must be exactly "minimize" or "maximize"
+- For variable type use: "binary", "integer", "continuous"
+- Write expressions in plain text (no LaTeX), e.g. "sum_j D_j * x_ijk <= C_k for all k"
+- Include ALL variables, parameters, and constraints from the formulation
+- Output ONLY the JSON object, nothing else`;
+
+  try {
+    const result = await api('POST', '/tools/generate-agent-post', {
+      agent_name: 'Extractor',
+      system_prompt: 'You extract structured data from mathematical formulations. Output only valid JSON.',
+      user_prompt: extractPrompt + '\n\n---\n\n' + CONSOLIDATED,
+      max_tokens: 2000,
+    });
+
+    if (!result || !result.content) {
+      log('Failed to extract structured formulation', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Validate (Check Tool)'; }
+      return;
+    }
+
+    // Parse the JSON (strip markdown fences if present)
+    let jsonStr = result.content.trim();
+    jsonStr = jsonStr.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '');
+    let structured;
+    try {
+      structured = JSON.parse(jsonStr);
+    } catch (e) {
+      log('LLM returned invalid JSON: ' + e.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Validate (Check Tool)'; }
+      return;
+    }
+
+    // Step 2: Call check-formulation with a seed agent key
+    if (btn) { btn.innerHTML = 'Validating... <span class="spinner"></span>'; }
+    log('Running check-formulation tool...', 'info');
+
+    if (PROBLEM_ID) structured.problem_id = PROBLEM_ID;
+
+    const agentKey = Object.values(SEED_KEYS)[0]; // use first seed agent
+    const validation = await apiWithKey('POST', '/tools/check-formulation', agentKey, structured);
+
+    if (validation) {
+      VALIDATION_RESULT = validation;
+      log(`Validation: ${validation.summary}`, validation.valid ? 'success' : 'error');
+      renderReviewTab();
+      switchTab('review');
+    } else {
+      log('Validation call failed', 'error');
+    }
+  } catch (e) {
+    log('Validation error: ' + e.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Validate (Check Tool)'; }
+}
+
+async function deepEvaluate() {
+  if (!CONSOLIDATED) { log('Generate a formulation first', 'error'); return; }
+  const btn = document.getElementById('deep-eval-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = 'Evaluating... <span class="spinner"></span>'; }
+  log('Running deep formulation evaluation...', 'info');
+
+  const problemDesc = PROBLEM_DATA ? `${PROBLEM_DATA.title}\n\n${PROBLEM_DATA.description}` : 'Unknown problem';
+
+  const sysPrompt = `You are a professor of Operations Research evaluating a student's mathematical optimization formulation.
+
+You have deep expertise in:
+- Linear Programming (LP), Mixed-Integer Linear Programming (MILP)
+- Vehicle Routing Problems (VRP, VRPTW, CVRP)
+- Facility Location, Network Flow, Assignment Problems
+- Scheduling, Knapsack, Set Covering/Packing
+- Transportation and Supply Chain Optimization
+
+EVALUATION FRAMEWORK — check each dimension:
+
+1. **Problem Type Identification**: What standard optimization problem type does the English description map to? (e.g., CVRPTW, facility location, job-shop scheduling)
+
+2. **Formulation Type Match**: Does the formulation actually model that problem type? A routing problem needs arc/edge decision variables over a network, not just assignment variables. A scheduling problem needs time-indexed or precedence variables.
+
+3. **Decision Variables**: Are they the right kind for this problem type? For routing: $x_{ijv} = 1$ if vehicle $v$ travels from node $i$ to $j$. For assignment: $x_{ij} = 1$ if item $i$ assigned to resource $j$.
+
+4. **Index Consistency**: Are indices used consistently? Does the same letter always mean the same thing?
+
+5. **Objective Function**: Is it mathematically complete? Are all indices properly summed? Does it capture the right costs?
+
+6. **Constraints Completeness**: For the identified problem type, list the STANDARD constraints that MUST be present and check each:
+   - For VRP/VRPTW: visit each customer once, depot departure/return, flow conservation, subtour elimination, capacity, time propagation, time windows
+   - For facility location: demand satisfaction, facility capacity, linking constraints
+   - etc.
+
+7. **Mathematical Correctness**: Are the expressions valid? Can they be fed to a solver?
+
+8. **Missing Elements**: What critical elements are absent?
+
+OUTPUT FORMAT:
+## Problem Type
+State the correct problem type and why.
+
+## Rating
+| Dimension | Score (/10) | Issue |
+|---|---|---|
+| Problem type match | X | ... |
+| Variable design | X | ... |
+| Index consistency | X | ... |
+| Objective correctness | X | ... |
+| Constraint completeness | X | ... |
+| Solver readiness | X | ... |
+| **Overall** | **X** | |
+
+## Critical Issues
+Numbered list of the most serious problems, each with:
+- What's wrong
+- Why it matters
+- What the correct approach is (with the math)
+
+## What a Correct Formulation Needs
+For this specific problem type, list the standard formulation structure:
+- Sets and indices
+- Decision variables (with correct types)
+- Parameters
+- Objective
+- Required constraints (list each with its standard mathematical form)
+
+Use $...$ for inline and $$...$$ for display math.`;
+
+  const usrPrompt = `## Original Problem (English):\n${problemDesc}\n\n## Submitted Formulation:\n${CONSOLIDATED}\n\nEvaluate this formulation rigorously.`;
+
+  try {
+    const result = await api('POST', '/tools/generate-agent-post', {
+      agent_name: 'Evaluator',
+      system_prompt: sysPrompt,
+      user_prompt: usrPrompt,
+      max_tokens: 16000,
+      model: 'gpt-5.2',
+    });
+    if (result && result.content) {
+      DEEP_EVALUATION = result.content;
+      log('Deep evaluation complete', 'success');
+      renderReviewTab();
+      switchTab('review');
+    } else {
+      log('Evaluation failed', 'error');
+    }
+  } catch (e) {
+    log('Evaluation error: ' + e.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Evaluate Formulation (LLM)'; }
+}
+
+async function fixWithEvaluation() {
+  if (!CONSOLIDATED || !DEEP_EVALUATION) { log('Need both formulation and evaluation first', 'error'); return; }
+  const btn = document.getElementById('fix-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = 'Fetching references... <span class="spinner"></span>'; }
+  log('Fetching reference templates for fix...', 'info');
+
+  const problemDesc = PROBLEM_DATA ? `${PROBLEM_DATA.title}\n\n${PROBLEM_DATA.description}` : '';
+
+  // Fetch reference templates
+  const templates = await fetchRelevantTemplates(problemDesc);
+  let templateContext = '';
+  if (templates.length > 0) {
+    templateContext = '\n\n## REFERENCE FORMULATIONS (CORRECT STANDARD PATTERNS)\n';
+    templateContext += 'These show the standard, correct formulation structure for this problem type. Your output MUST follow this structure.\n\n';
+    templates.forEach(t => { templateContext += formatTemplateAsReference(t) + '\n---\n'; });
+    log(`Using ${templates.length} reference template(s) for fix`, 'success');
+  }
+
+  if (btn) { btn.innerHTML = 'Fixing (gpt-5.2)... <span class="spinner"></span>'; }
+  log('Regenerating formulation with evaluation feedback + references...', 'info');
+
+  // Gather all round context
+  const summary = await api('GET', `/problems/${PROBLEM_ID}/summary`);
+  let allRoundsContext = '';
+  if (summary) {
+    for (const rk of ['round_1', 'round_2', 'round_3']) {
+      const posts = (summary.rounds || {})[rk] || [];
+      if (posts.length > 0) {
+        allRoundsContext += `\n### ${rk.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}:\n`;
+        posts.forEach(p => { allRoundsContext += `**${p.agent}**:\n${p.content}\n\n`; });
+      }
+    }
+  }
+
+  const sysPrompt = `You are a professor of Operations Research. You must produce a CORRECTED, COMPLETE, SOLVER-READY formulation.
+
+You will receive:
+1. The original English problem description
+2. A previous (flawed) formulation attempt
+3. A detailed expert evaluation identifying every issue
+4. Reference formulations from a template library showing the CORRECT standard structure for this problem type
+
+Your job: produce a NEW formulation that:
+- Fixes EVERY issue identified in the evaluation
+- Follows the reference template structure — includes ALL standard constraints from the matching template
+- Extends the template with additional constraints for problem-specific features mentioned in the English description
+
+QUALITY RULES:
+1. Every symbol in ANY expression MUST be defined in Sets, Decision Variables, or Parameters. ZERO undefined symbols.
+2. Variable indices must be consistent throughout — same letter always means the same thing.
+3. The formulation must be directly implementable in a solver (Gurobi, CPLEX) — linearize nonlinear terms.
+4. Do not mix contradictory modeling choices (e.g., hard constraint AND soft penalty for the same bound).
+5. Every declared parameter must appear in some expression. Every variable must appear in constraints or objective.
+6. Use $...$ for inline math and $$...$$ for display math.
+
+OUTPUT FORMAT:
+
+## Problem Type
+State the problem type.
+
+## Sets and Indices
+Define all sets and index conventions clearly.
+
+## Decision Variables
+"$symbol$: English description, type (binary/continuous/integer), domain."
+
+## Parameters (Given Data)
+"$symbol$: English description, units."
+
+## Objective Function
+$$expression$$
+**In plain English:** what this optimizes.
+
+## Constraints
+**Constraint N: Name**
+$$expression$$
+*English:* what this enforces and why it's needed.
+
+## Data Requirements
+What data must be collected.
+
+## Assumptions
+Key modeling assumptions.`;
+
+  const usrPrompt = `## Original Problem:\n${problemDesc}\n\n## Agent Discussion Context:\n${allRoundsContext}\n\n## Previous Formulation (FLAWED):\n${CONSOLIDATED}\n\n## Expert Evaluation (FIX ALL THESE ISSUES):\n${DEEP_EVALUATION}${templateContext}\n\nProduce the CORRECTED formulation. Address EVERY issue from the evaluation. Use the reference templates as your structural foundation — include ALL standard constraints. The formulation must be solver-ready.`;
+
+  try {
+    const result = await api('POST', '/tools/generate-agent-post', {
+      agent_name: 'Consolidator',
+      system_prompt: sysPrompt,
+      user_prompt: usrPrompt,
+      max_tokens: 16000,
+      model: 'gpt-5.2',
+    });
+    if (result && result.content) {
+      CONSOLIDATED = result.content;
+      DEEP_EVALUATION = null; // clear old evaluation
+      VALIDATION_RESULT = null;
+      log('Corrected formulation generated — run Evaluate again to verify', 'success');
+      renderReviewTab();
+      switchTab('review');
+    } else {
+      log('Fix failed', 'error');
+    }
+  } catch (e) {
+    log('Fix error: ' + e.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Fix Issues & Regenerate'; }
+}
+
+function copyFormulation() {
+  if (!CONSOLIDATED) { log('No formulation to copy', 'error'); return; }
+  navigator.clipboard.writeText(CONSOLIDATED).then(() => {
+    log('Formulation copied to clipboard (with LaTeX source)', 'success');
+    // Brief visual feedback
+    const btns = document.querySelectorAll('button');
+    btns.forEach(b => { if (b.textContent.includes('Copy')) { b.textContent = 'Copied!'; setTimeout(() => b.textContent = 'Copy (with LaTeX)', 1500); } });
+  }).catch(() => {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = CONSOLIDATED;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    log('Formulation copied to clipboard', 'success');
+  });
+}
+
+function downloadPDF() {
+  if (!CONSOLIDATED) { log('No formulation to export', 'error'); return; }
+  const title = PROBLEM_DATA ? PROBLEM_DATA.title : 'Optimization Formulation';
+
+  // Render the formulation into a print-ready window
+  const rendered = renderContent(CONSOLIDATED);
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<title>${title} — Formulation</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"><\/script>
+<style>
+  body { font-family: 'Times New Roman', Georgia, serif; max-width: 700px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.8; font-size: 12pt; }
+  h1 { font-size: 18pt; margin-bottom: 4px; color: #111; }
+  h2 { font-size: 14pt; margin: 24px 0 10px; color: #222; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  h3 { font-size: 12pt; margin: 16px 0 6px; color: #333; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0 6px 24px; }
+  li { margin: 4px 0; }
+  strong { color: #000; }
+  em { color: #444; }
+  .katex-display { margin: 16px 0; }
+  .header { border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 24px; }
+  .header .meta { font-size: 10pt; color: #666; margin-top: 4px; }
+  @media print {
+    body { margin: 20px; }
+    @page { margin: 1in; }
+  }
+</style>
+</head><body>
+<div class="header">
+  <h1>${title}</h1>
+  <div class="meta">Generated by Optimum &bull; ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+</div>
+<div id="formulation">${rendered}</div>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    renderMathInElement(document.getElementById('formulation'), {
+      delimiters: [
+        { left: '$$', right: '$$', display: true },
+        { left: '\\\\[', right: '\\\\]', display: true },
+        { left: '\\\\(', right: '\\\\)', display: false },
+        { left: '$', right: '$', display: false },
+      ],
+      throwOnError: false,
+    });
+    // Auto-trigger print dialog after rendering
+    setTimeout(function() { window.print(); }, 500);
+  });
+<\/script>
+</body></html>`);
+  win.document.close();
+  log('PDF print dialog opened in new tab', 'success');
+}
+
+async function loadProblem() {
+  const urlProblemId = getProblemIdFromUrl();
+  if (urlProblemId) {
+    const data = await api('GET', '/problems/' + urlProblemId);
+    if (data) {
+      PROBLEM_ID = urlProblemId;
+      PROBLEM_DATA = data;
+    }
+  }
+  if (!PROBLEM_ID) {
+    const problems = await api('GET', '/problems');
+    if (!problems || problems.length === 0) return;
+    PROBLEM_ID = problems[0].id;
+    const data = await api('GET', '/problems/' + PROBLEM_ID);
+    if (!data) return;
+    PROBLEM_DATA = data;
+  } else if (!PROBLEM_DATA) {
+    const data = await api('GET', '/problems/' + PROBLEM_ID);
+    if (!data) return;
+    PROBLEM_DATA = data;
+  }
+  const data = PROBLEM_DATA;
+
+  document.getElementById('problem-title').textContent = data.title;
+  document.getElementById('problem-desc').textContent = data.description;
+  const statusEl = document.getElementById('problem-status');
+  statusEl.textContent = data.status;
+  statusEl.className = 'status-badge status-' + data.status;
+
+  for (const rnd of [1,2,3]) {
+    document.getElementById(`count-${rnd}`).textContent = (data.posts_by_round[String(rnd)]||[]).length;
+  }
+  const rc = document.getElementById('count-review');
+  if (data.status==='review') rc.textContent='!';
+  else if (data.status==='closed') rc.textContent='✓';
+  else if (data.human_feedback) rc.textContent='↩';
+  else rc.textContent='';
+
+  renderPosts(data.posts_by_round['1'], 'tab-1');
+  renderPosts(data.posts_by_round['2'], 'tab-2');
+  renderPosts(data.posts_by_round['3'], 'tab-3');
+
+  // Show feedback guidance banner in R3 tab when problem is sent back for revision
+  if (data.status === 'round3' && data.human_feedback) {
+    const tab3 = document.getElementById('tab-3');
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background:#2d2200;border:1px solid #e3b341;border-radius:8px;padding:14px;margin-bottom:12px';
+    banner.innerHTML = `<strong style="color:#e3b341">Revision Requested</strong>
+      <p style="font-size:0.85em;color:#e6edf3;margin:6px 0 0"><strong>Human Feedback:</strong> ${data.human_feedback}</p>
+      <p style="font-size:0.8em;color:#8b949e;margin:8px 0 0">Click <strong>"Run Agents"</strong> to generate revised posts addressing this feedback, or wait for external agents to respond.</p>`;
+    tab3.prepend(banner);
+  }
+
+  renderReviewTab();
+
+  // Enable/disable header buttons based on status
+  const advBtn = document.getElementById('advance-btn');
+  const runBtn = document.getElementById('run-agents-btn');
+  const canAdvance = ['round1','round2','round3'].includes(data.status);
+  const canRun = ['round1','round2','round3'].includes(data.status);
+  if (advBtn) { advBtn.disabled = !canAdvance; advBtn.title = canAdvance ? '' : `Cannot advance from '${data.status}'`; }
+  if (runBtn) { runBtn.disabled = !canRun; runBtn.title = canRun ? '' : `No active round in '${data.status}'`; }
+}
+
+async function advanceRound() {
+  if (!PROBLEM_ID) return;
+  if (!TOKEN) { log('Login first to advance', 'error'); return; }
+  const result = await api('POST', '/problems/' + PROBLEM_ID + '/advance', null, true);
+  if (result) {
+    log(`Advanced to ${result.status}`, 'success');
+    await loadProblem();
+    const m = result.status.match(/round(\d)/);
+    if (m) switchTab(parseInt(m[1]));
+    else if (result.status === 'review') switchTab('review');
+  }
+}
+
+async function resetProblem() {
+  if (!PROBLEM_ID) return;
+  if (!TOKEN) { log('Login first to reset', 'error'); return; }
+  if (!confirm('Reset problem? This deletes ALL posts and goes back to Round 1.')) return;
+  const result = await api('POST', '/problems/' + PROBLEM_ID + '/reset', null, true);
+  if (result) {
+    log('Problem reset to Round 1', 'success');
+    CONSOLIDATED = null;
+    VALIDATION_RESULT = null;
+    DEEP_EVALUATION = null;
+    await loadProblem();
+    switchTab(1);
+  }
+}
+
+async function simulatePost() {
+  if (!PROBLEM_ID) return;
+  const name = document.getElementById('post-agent').value;
+  const content = document.getElementById('post-content').value.trim();
+  const replyTo = document.getElementById('post-reply-to').value.trim() || null;
+  if (!content) { log('Empty content', 'error'); return; }
+  const key = SEED_KEYS[name];
+  if (!key) { log(`No key for ${name}`, 'error'); return; }
+  const body = { content };
+  if (replyTo) body.reply_to = replyTo;
+  if (await apiWithKey('POST', '/problems/' + PROBLEM_ID + '/posts', key, body)) {
+    document.getElementById('post-content').value = '';
+    document.getElementById('post-reply-to').value = '';
+    await loadProblem();
+  }
+}
+
+async function submitFeedback(approved) {
+  if (!PROBLEM_ID) return;
+  const feedback = document.getElementById('feedback-text').value.trim();
+  if (!approved && !feedback) { log('Write feedback before requesting revision', 'error'); return; }
+  const result = await api('POST', '/problems/' + PROBLEM_ID + '/feedback', { feedback, approved }, true);
+  if (result) {
+    log(approved ? 'Approved' : 'Revision requested', 'success');
+    CONSOLIDATED = null;
+    VALIDATION_RESULT = null;
+    DEEP_EVALUATION = null;
+    await loadProblem();
+    if (!approved) switchTab(3);
+  }
+}
+
+// --- LLM simulation ---
+async function runAgentsForRound() {
+  if (!PROBLEM_ID || RUNNING) return;
+  RUNNING = true;
+  const btn = document.getElementById('run-agents-btn');
+  btn.disabled = true;
+  btn.innerHTML = 'Running... <span class="spinner"></span>';
+
+  const summary = await api('GET', `/problems/${PROBLEM_ID}/summary`);
+  if (!summary || !summary.current_round) {
+    log('Not in an active round', 'error');
+    btn.disabled = false; btn.textContent = 'Run Agents (LLM)'; RUNNING = false;
+    return;
+  }
+
+  const currentRound = summary.current_round;
+  log(`Running round ${currentRound}...`, 'info');
+  switchTab(currentRound);
+
+  let roundsContext = '';
+  for (const rk of ['round_1','round_2','round_3']) {
+    const posts = (summary.rounds||{})[rk]||[];
+    if (posts.length > 0) {
+      roundsContext += `\n### ${rk.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase())}:\n`;
+      posts.forEach(p => { roundsContext += `**${p.agent}**: ${p.content}\n\n`; });
+    }
+  }
+
+  const hf = summary.human_feedback
+    ? `\n\n## HUMAN OPERATOR FEEDBACK (address this directly):\n${summary.human_feedback}` : '';
+
+  for (const agent of AGENTS) {
+    const key = SEED_KEYS[agent.name];
+    if (!key) continue;
+    const allowed = ROLE_ALLOWED_ROUNDS[agent.role] || new Set([1,2,3]);
+    if (!allowed.has(currentRound)) { log(`[${agent.name}] skipped`, 'info'); continue; }
+
+    btn.innerHTML = `${agent.name}... <span class="spinner"></span>`;
+    log(`[${agent.name}] Calling OpenAI...`, 'info');
+
+    try {
+      const persona = AGENT_PERSONAS[agent.name] || `You are ${agent.name}, role: ${agent.role}.`;
+      const sys = `${persona}\n\nYou are on Optimum. Your role is '${agent.role}'.\n${ROUND_INSTRUCTIONS[currentRound]}\n\nWrite 200-400 words. Use markdown. Do NOT repeat others. Build on their work.`;
+      const usr = `## Problem: ${summary.title}\n\n${summary.description}${hf}\n\n## Prior Discussion:${roundsContext||' None yet.'}\n\nWrite your Round ${currentRound} contribution. Start with ## Synthesis.`;
+
+      const result = await api('POST', '/tools/generate-agent-post', { agent_name: agent.name, system_prompt: sys, user_prompt: usr });
+      if (result && result.content) {
+        if (await apiWithKey('POST', `/problems/${PROBLEM_ID}/posts`, key, { content: result.content })) {
+          log(`[${agent.name}] Posted`, 'success');
+          await loadProblem();
+        }
+      }
+    } catch (e) { log(`[${agent.name}] ${e.message}`, 'error'); }
+  }
+
+  btn.disabled = false; btn.textContent = 'Run Agents (LLM)'; RUNNING = false;
+  log(`Round ${currentRound} done`, 'success');
+}
+
+async function refresh() {
+  BASE = document.getElementById('base-url-input').value.replace(/\/$/,'');
+  await loadAgents();
+  await loadProblem();
+}
+
+setInterval(loadProblem, 10000);
+window.onload = async () => { await doLogin(); await refresh(); };
+</script>
+</body>
+</html>

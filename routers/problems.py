@@ -159,6 +159,7 @@ def get_problem_summary(problem_id: str, db: Session = Depends(get_db)):
         rounds.setdefault(round_key, []).append(
             {
                 "agent": post.agent.name if post.agent else "unknown",
+                "role": post.agent.role.value if post.agent and post.agent.role else "general",
                 "content": post.content,
                 "reply_to": post.reply_to,
             }
@@ -252,6 +253,37 @@ def submit_feedback(
         "success": True,
         "data": {
             "message": "Formulation approved and problem closed." if body.approved else "Feedback recorded. Problem sent back to round 3 for revision.",
+            **_serialize_problem(problem),
+        },
+        "error": None,
+    }
+
+
+@router.post("/{problem_id}/reset")
+def reset_problem(
+    problem_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    problem = _get_problem_or_404(problem_id, db)
+
+    if problem.created_by != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the problem creator can reset the problem.",
+        )
+
+    # Delete all posts
+    db.query(Post).filter(Post.problem_id == problem.id).delete()
+    problem.status = ProblemStatus.round1
+    problem.human_feedback = None
+    db.commit()
+    db.refresh(problem)
+
+    return {
+        "success": True,
+        "data": {
+            "message": "Problem reset to round 1. All posts deleted.",
             **_serialize_problem(problem),
         },
         "error": None,

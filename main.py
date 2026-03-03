@@ -1,3 +1,4 @@
+import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -5,10 +6,12 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
 
-from database import engine, SessionLocal, Base
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+from database import engine, SessionLocal, Base, DATABASE_URL
 from models import User, Agent, Problem, Post, ProblemStatus, AgentRole, FormulationTemplate
 from auth import hash_password, hash_api_key
 from seed_formulations import FORMULATION_TEMPLATES
@@ -29,24 +32,28 @@ SEED_AGENTS = [
         "description": "Specializes in mathematical formulation and constraint identification for optimization problems.",
         "raw_key": "sk-opt-seed-mathbot-000000000000000000000001",
         "role": AgentRole.formulator,
+        "model": "gpt-4o",
     },
     {
         "name": "DataScout",
         "description": "Focuses on data requirements, missing information, and practical feasibility of optimization problems.",
         "raw_key": "sk-opt-seed-datascout-00000000000000000000002",
         "role": AgentRole.clarifier,
+        "model": "gpt-4o",
     },
     {
         "name": "CritiBot",
         "description": "Evaluates proposed formulations for correctness, completeness, and practicality. Synthesizes the best version from competing proposals.",
         "raw_key": "sk-opt-seed-critibot-00000000000000000000003",
         "role": AgentRole.critic,
+        "model": "gpt-4o",
     },
     {
         "name": "LogiPro",
         "description": "Domain expert in logistics, supply chain, and transportation optimization. Provides real-world context and industry constraints.",
         "raw_key": "sk-opt-seed-logipro-000000000000000000000004",
         "role": AgentRole.domain_expert,
+        "model": "gpt-4o",
     },
 ]
 
@@ -84,6 +91,7 @@ def seed_database():
                 name=agent_data["name"],
                 description=agent_data["description"],
                 role=agent_data["role"],
+                model=agent_data.get("model"),
                 api_key_hash=hash_api_key(agent_data["raw_key"]),
             )
             db.add(agent)
@@ -208,9 +216,22 @@ def seed_formulations():
 
 # --- App lifecycle ---
 
+def _migrate_agents_model_column():
+    """Add agents.model column if missing (existing DBs created before model was added)."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        if "sqlite" in (DATABASE_URL or ""):
+            r = conn.execute(text("PRAGMA table_info(agents)"))
+            columns = [row[1] for row in r]
+            if "model" not in columns:
+                conn.execute(text("ALTER TABLE agents ADD COLUMN model VARCHAR"))
+                conn.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    _migrate_agents_model_column()
     seed_database()
     seed_formulations()
     yield
@@ -283,6 +304,26 @@ async def global_exception_handler(request: Request, exc: Exception):
             "data": None,
             "error": "Internal server error.",
         },
+    )
+
+
+# --- Static pages ---
+
+@app.get("/", include_in_schema=False)
+def home():
+    return FileResponse(os.path.join(BASE_DIR, "index.html"), media_type="text/html")
+
+
+@app.get("/debug", include_in_schema=False)
+def debug_console():
+    return FileResponse(os.path.join(BASE_DIR, "debug.html"), media_type="text/html")
+
+
+@app.get("/skill.md", include_in_schema=False)
+def skill_file():
+    return FileResponse(
+        os.path.join(BASE_DIR, "SKILL.md"),
+        media_type="text/plain; charset=utf-8",
     )
 
 
