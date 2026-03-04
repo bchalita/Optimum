@@ -39,6 +39,7 @@ class FeedbackRequest(BaseModel):
 
 class AssignAgentRequest(BaseModel):
     agent_id: str
+    role: str = ""  # role slot to assign to (clarifier, formulator, critic, domain_expert)
 
 
 # --- Helpers ---
@@ -111,6 +112,39 @@ def create_problem(
     return {
         "success": True,
         "data": _serialize_problem(problem),
+        "error": None,
+    }
+
+
+ROLE_DESCRIPTIONS = {
+    "clarifier": {
+        "name": "Clarifier",
+        "description": "Identifies gaps, missing data, and ambiguities in the problem statement.",
+        "rounds": [1, 2],
+    },
+    "formulator": {
+        "name": "Formulator",
+        "description": "Builds the mathematical formulation — decision variables, objective, and constraints.",
+        "rounds": [2, 3],
+    },
+    "critic": {
+        "name": "Critic",
+        "description": "Evaluates proposed formulations for correctness, completeness, and practical issues.",
+        "rounds": [3],
+    },
+    "domain_expert": {
+        "name": "Domain Expert",
+        "description": "Provides real-world context and validates formulations against industry practice.",
+        "rounds": [1, 2, 3],
+    },
+}
+
+
+@router.get("/roles")
+def list_roles():
+    return {
+        "success": True,
+        "data": ROLE_DESCRIPTIONS,
         "error": None,
     }
 
@@ -330,24 +364,50 @@ def assign_agent(
             detail=f"Agent '{body.agent_id}' not found.",
         )
 
-    existing = (
+    # Determine role: explicit > agent's default
+    assign_role = agent.role
+    if body.role:
+        try:
+            assign_role = AgentRole(body.role)
+        except ValueError:
+            valid = [r.value for r in AgentRole]
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid role '{body.role}'. Valid roles: {valid}",
+            )
+
+    # Check if this role slot is already filled
+    existing_role = (
+        db.query(ProblemAgent)
+        .filter(ProblemAgent.problem_id == problem_id, ProblemAgent.role == assign_role)
+        .first()
+    )
+    if existing_role:
+        existing_name = existing_role.agent.name if existing_role.agent else "unknown"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Role '{assign_role.value}' is already filled by '{existing_name}'. Remove them first.",
+        )
+
+    # Check if agent is already assigned (any role)
+    existing_agent = (
         db.query(ProblemAgent)
         .filter(ProblemAgent.problem_id == problem_id, ProblemAgent.agent_id == body.agent_id)
         .first()
     )
-    if existing:
+    if existing_agent:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Agent '{agent.name}' is already assigned to this problem.",
+            detail=f"Agent '{agent.name}' is already assigned to this problem as '{existing_agent.role.value}'.",
         )
 
-    pa = ProblemAgent(problem_id=problem_id, agent_id=body.agent_id)
+    pa = ProblemAgent(problem_id=problem_id, agent_id=body.agent_id, role=assign_role)
     db.add(pa)
     db.commit()
 
     return {
         "success": True,
-        "data": _serialize_agent(agent),
+        "data": {**_serialize_agent(agent), "assigned_role": assign_role.value},
         "error": None,
     }
 
@@ -404,7 +464,7 @@ def list_problem_agents(
     agents = []
     for pa in assignments:
         if pa.agent:
-            agents.append(_serialize_agent(pa.agent))
+            agents.append({**_serialize_agent(pa.agent), "assigned_role": pa.role.value if pa.role else pa.agent.role.value})
 
     return {
         "success": True,
@@ -524,11 +584,30 @@ def run_round(
         .filter(ProblemAgent.problem_id == problem_id)
         .all()
     )
-    agents = [pa.agent for pa in assignments if pa.agent]
-    if not agents:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No agents assigned to this problem. Assign agents first.",
+
+    # Auto-assign if no agents assigned: pick random agents to fill all 4 role slots
+    if not assignments:
+        import random
+        all_agents = db.query(Agent).all()
+        if not all_agents:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No agents registered on the platform.",
+            )
+        needed_roles = [AgentRole.clarifier, AgentRole.formulator, AgentRole.critic, AgentRole.domain_expert]
+        available = list(all_agents)
+        random.shuffle(available)
+        for role in needed_roles:
+            if not available:
+                break
+            agent = available.pop(0)
+            pa = ProblemAgent(problem_id=problem_id, agent_id=agent.id, role=role)
+            db.add(pa)
+        db.flush()
+        assignments = (
+            db.query(ProblemAgent)
+            .filter(ProblemAgent.problem_id == problem_id)
+            .all()
         )
 
     # Get existing posts for context
@@ -548,10 +627,14 @@ def run_round(
         human_feedback = f"\n\n## HUMAN OPERATOR FEEDBACK (address this directly):\n{problem.human_feedback}"
 
     results = []
-    for agent in agents:
-        allowed = ROLE_ALLOWED_ROUNDS.get(agent.role, {1, 2, 3})
+    for pa in assignments:
+        agent = pa.agent
+        if not agent:
+            continue
+        role = pa.role  # use the problem-specific assigned role
+        allowed = ROLE_ALLOWED_ROUNDS.get(role, {1, 2, 3})
         if current_round not in allowed:
-            results.append({"agent": agent.name, "status": "skipped", "reason": f"role '{agent.role.value}' not allowed in round {current_round}"})
+            results.append({"agent": agent.name, "role": role.value, "status": "skipped", "reason": f"role '{role.value}' not active in round {current_round}"})
             continue
 
         # Check rate limit
@@ -561,14 +644,14 @@ def run_round(
             .count()
         )
         if existing_count >= 3:
-            results.append({"agent": agent.name, "status": "skipped", "reason": "rate limit (3 posts)"})
+            results.append({"agent": agent.name, "role": role.value, "status": "skipped", "reason": "rate limit (3 posts)"})
             continue
 
-        persona = ROLE_PERSONAS.get(agent.role, ROLE_PERSONAS[AgentRole.general])
+        persona = ROLE_PERSONAS.get(role, ROLE_PERSONAS[AgentRole.general])
         sys_prompt = (
             f"You are {agent.name}. {agent.description or ''}\n\n"
             f"{persona}\n\n"
-            f"Your role is '{agent.role.value}'. {ROUND_INSTRUCTIONS[current_round]}\n\n"
+            f"Your assigned role on this problem is '{role.value}'. {ROUND_INSTRUCTIONS[current_round]}\n\n"
             "COLLABORATION RULE: Start every post with a '## Synthesis' section referencing other agents by name.\n"
             "Use LaTeX: $...$ for inline math, $$...$$ for display math.\n"
             "Write 200-400 words. Use markdown. Do NOT repeat others. Build on their work."
@@ -590,9 +673,9 @@ def run_round(
             )
             db.add(post)
             db.flush()
-            results.append({"agent": agent.name, "status": "posted"})
+            results.append({"agent": agent.name, "role": role.value, "status": "posted"})
         except Exception as e:
-            results.append({"agent": agent.name, "status": "error", "reason": str(e)})
+            results.append({"agent": agent.name, "role": role.value, "status": "error", "reason": str(e)})
 
     db.commit()
 

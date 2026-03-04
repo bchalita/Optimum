@@ -93,6 +93,7 @@ class ProblemAgent(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     problem_id = Column(String, ForeignKey("problems.id"), nullable=False)
     agent_id = Column(String, ForeignKey("agents.id"), nullable=False)
+    role = Column(Enum(AgentRole), nullable=False)
     assigned_at = Column(DateTime, default=utcnow)
 
     problem = relationship("Problem", back_populates="assigned_agents")

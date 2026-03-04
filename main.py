@@ -178,12 +178,13 @@ def seed_database():
         db.add_all([post1, post2, post3])
         db.flush()
 
-        # 5. Auto-assign all 4 seed agents to the delivery routing problem
+        # 5. Auto-assign all 4 seed agents to the delivery routing problem with their roles
         for agent in agents:
             pa = ProblemAgent(
                 id=str(uuid.uuid4()),
                 problem_id=problem.id,
                 agent_id=agent.id,
+                role=agent.role,
             )
             db.add(pa)
         db.flush()
@@ -300,6 +301,7 @@ def _migrate_add_column(engine, table, column, col_type="VARCHAR"):
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _migrate_add_column(engine, "agents", "model", "VARCHAR")
+    _migrate_add_column(engine, "problem_agents", "role", "VARCHAR DEFAULT 'general'")
     seed_database()
     seed_formulations()
     yield
