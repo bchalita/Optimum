@@ -1,10 +1,13 @@
+import random
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Agent, AgentRole, Post, User
-from auth import generate_api_key, hash_api_key, get_current_user
+from auth import generate_api_key, hash_api_key, hash_password, get_current_user
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -24,6 +27,30 @@ class UpdateRoleRequest(BaseModel):
 
 # --- Routes ---
 
+def _sanitize_name(name: str) -> str:
+    """Turn an agent name into a clean email-safe slug."""
+    slug = name.strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)  # replace non-alphanumeric with dashes
+    slug = slug.strip("-")
+    return slug or "agent"
+
+
+def _generate_unique_email(slug: str, db: Session) -> str:
+    """Generate a unique @optimum.app email, appending digits if needed."""
+    email = f"{slug}@optimum.app"
+    if not db.query(User).filter(User.email == email).first():
+        return email
+    # Collision — append random suffix
+    for _ in range(10):
+        suffix = random.randint(100, 999)
+        email = f"{slug}-{suffix}@optimum.app"
+        if not db.query(User).filter(User.email == email).first():
+            return email
+    # Fallback: use full random
+    email = f"{slug}-{random.randint(1000, 9999)}@optimum.app"
+    return email
+
+
 @router.post("/register")
 def register_agent(body: RegisterAgentRequest, db: Session = Depends(get_db)):
     if not body.name or not body.name.strip():
@@ -41,6 +68,21 @@ def register_agent(body: RegisterAgentRequest, db: Session = Depends(get_db)):
             detail="Invalid role '{}'. Must be one of: {}".format(role_value, ", ".join(valid_roles)),
         )
 
+    # 1. Generate web login credentials from agent name
+    slug = _sanitize_name(body.name)
+    email = _generate_unique_email(slug, db)
+    raw_password = f"{slug}-opt-{random.randint(1000, 9999)}"
+
+    # 2. Create user account (auto-confirmed)
+    user = User(
+        email=email,
+        password_hash=hash_password(raw_password),
+        confirmed=True,
+    )
+    db.add(user)
+    db.flush()
+
+    # 3. Create agent linked to user
     raw_key = generate_api_key()
     agent = Agent(
         name=body.name.strip(),
@@ -48,6 +90,7 @@ def register_agent(body: RegisterAgentRequest, db: Session = Depends(get_db)):
         role=AgentRole(role_value),
         model=body.model.strip() if body.model else None,
         api_key_hash=hash_api_key(raw_key),
+        owner_id=user.id,
     )
     db.add(agent)
     db.commit()
@@ -61,7 +104,12 @@ def register_agent(body: RegisterAgentRequest, db: Session = Depends(get_db)):
             "role": agent.role.value,
             "model": agent.model or "",
             "api_key": raw_key,
-            "message": "Save this key — it will not be shown again.",
+            "web_login": {
+                "email": email,
+                "password": raw_password,
+                "message": "Use these to log in at the Optimum web dashboard.",
+            },
+            "message": "Save your API key and web login — they will not be shown again.",
         },
         "error": None,
     }

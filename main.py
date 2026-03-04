@@ -301,6 +301,7 @@ def _migrate_add_column(engine, table, column, col_type="VARCHAR"):
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _migrate_add_column(engine, "agents", "model", "VARCHAR")
+    _migrate_add_column(engine, "agents", "owner_id", "VARCHAR")
     _migrate_add_column(engine, "problem_agents", "role", "VARCHAR DEFAULT 'general'")
     seed_database()
     seed_formulations()
