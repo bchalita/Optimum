@@ -1,9 +1,11 @@
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Problem, Post, ProblemStatus, User, Agent, ProblemAgent
+from models import Problem, Post, ProblemStatus, User, Agent, ProblemAgent, AgentRole
 from auth import get_current_user
 
 router = APIRouter(prefix="/problems", tags=["problems"])
@@ -407,5 +409,198 @@ def list_problem_agents(
     return {
         "success": True,
         "data": agents,
+        "error": None,
+    }
+
+
+# --- Run round (server-side LLM agent execution) ---
+
+ROLE_ALLOWED_ROUNDS = {
+    AgentRole.general: {1, 2, 3},
+    AgentRole.clarifier: {1, 2},
+    AgentRole.formulator: {2, 3},
+    AgentRole.critic: {3},
+    AgentRole.domain_expert: {1, 2, 3},
+}
+
+ROLE_PERSONAS = {
+    AgentRole.formulator: (
+        "You are an expert in mathematical optimization. "
+        "You build rigorous formulations with decision variables, objectives, and constraints."
+    ),
+    AgentRole.clarifier: (
+        "You are a data analyst focused on practical feasibility. "
+        "You identify missing data, ambiguous objectives, and unclear constraints."
+    ),
+    AgentRole.critic: (
+        "You are a critical evaluator of optimization formulations. "
+        "You check for correctness, completeness, and practical issues."
+    ),
+    AgentRole.domain_expert: (
+        "You are a domain expert who provides real-world context. "
+        "You validate formulations against industry practice and flag unrealistic assumptions."
+    ),
+    AgentRole.general: (
+        "You are a general optimization assistant. "
+        "You contribute analysis, formulations, or critiques as needed."
+    ),
+}
+
+ROUND_INSTRUCTIONS = {
+    1: "Round 1 — Identify Gaps. Post what is missing or ambiguous. Do NOT formulate yet.",
+    2: "Round 2 — Discuss & Refine. Respond to specific points from other agents. Build consensus.",
+    3: (
+        "Round 3 — Formulation & Evaluation. Use LaTeX ($$...$$ for display, $...$ for inline) for ALL math.\n\n"
+        "If you are a FORMULATOR, write a complete structured formulation with these EXACT sections:\n"
+        "## Decision Variables - list every variable with LaTeX symbol AND English explanation.\n"
+        "## Parameters - list every parameter with LaTeX symbol and English meaning.\n"
+        "## Objective Function - state min/max, write full expression in $$...$$, explain in English.\n"
+        "## Constraints - number each, write in $$...$$, explain in English what it enforces.\n"
+        "## Data Requirements - list what real-world data is needed.\n\n"
+        "If you are a CRITIC, evaluate the FORMULATOR's formulation. Check: (1) undefined symbols, "
+        "(2) inconsistent indices, (3) missing constraints, (4) math errors, (5) completeness.\n\n"
+        "If you are a DOMAIN EXPERT, validate the formulation against real-world operations."
+    ),
+}
+
+
+def _build_rounds_context(posts_by_round: dict) -> str:
+    context = ""
+    for rnd in [1, 2, 3]:
+        posts = posts_by_round.get(str(rnd), [])
+        if posts:
+            context += f"\n### Round {rnd}:\n"
+            for p in posts:
+                name = p.agent.name if p.agent else "Unknown"
+                context += f"**{name}**: {p.content}\n\n"
+    return context
+
+
+def _call_llm(agent_name: str, system_prompt: str, user_prompt: str, model: str = "gpt-4o") -> str:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OPENAI_API_KEY not set on server.",
+        )
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key)
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=800,
+        temperature=0.7,
+    )
+    return response.choices[0].message.content.strip()
+
+
+@router.post("/{problem_id}/run-round")
+def run_round(
+    problem_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    problem = _get_problem_or_404(problem_id, db)
+
+    if problem.created_by != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the problem creator can run agents.",
+        )
+
+    current_round = STATUS_ROUND.get(problem.status)
+    if current_round is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Problem is in '{problem.status.value}' status — not in an active round.",
+        )
+
+    # Get assigned agents
+    assignments = (
+        db.query(ProblemAgent)
+        .filter(ProblemAgent.problem_id == problem_id)
+        .all()
+    )
+    agents = [pa.agent for pa in assignments if pa.agent]
+    if not agents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No agents assigned to this problem. Assign agents first.",
+        )
+
+    # Get existing posts for context
+    all_posts = (
+        db.query(Post)
+        .filter(Post.problem_id == problem_id)
+        .order_by(Post.round, Post.created_at)
+        .all()
+    )
+    posts_by_round: dict[str, list] = {}
+    for p in all_posts:
+        posts_by_round.setdefault(str(p.round), []).append(p)
+
+    rounds_context = _build_rounds_context(posts_by_round)
+    human_feedback = ""
+    if problem.human_feedback:
+        human_feedback = f"\n\n## HUMAN OPERATOR FEEDBACK (address this directly):\n{problem.human_feedback}"
+
+    results = []
+    for agent in agents:
+        allowed = ROLE_ALLOWED_ROUNDS.get(agent.role, {1, 2, 3})
+        if current_round not in allowed:
+            results.append({"agent": agent.name, "status": "skipped", "reason": f"role '{agent.role.value}' not allowed in round {current_round}"})
+            continue
+
+        # Check rate limit
+        existing_count = (
+            db.query(Post)
+            .filter(Post.problem_id == problem_id, Post.agent_id == agent.id, Post.round == current_round)
+            .count()
+        )
+        if existing_count >= 3:
+            results.append({"agent": agent.name, "status": "skipped", "reason": "rate limit (3 posts)"})
+            continue
+
+        persona = ROLE_PERSONAS.get(agent.role, ROLE_PERSONAS[AgentRole.general])
+        sys_prompt = (
+            f"You are {agent.name}. {agent.description or ''}\n\n"
+            f"{persona}\n\n"
+            f"Your role is '{agent.role.value}'. {ROUND_INSTRUCTIONS[current_round]}\n\n"
+            "COLLABORATION RULE: Start every post with a '## Synthesis' section referencing other agents by name.\n"
+            "Use LaTeX: $...$ for inline math, $$...$$ for display math.\n"
+            "Write 200-400 words. Use markdown. Do NOT repeat others. Build on their work."
+        )
+        usr_prompt = (
+            f"## Problem: {problem.title}\n\n{problem.description}"
+            f"{human_feedback}\n\n"
+            f"## Prior Discussion:{rounds_context or ' None yet.'}\n\n"
+            f"Write your Round {current_round} contribution."
+        )
+
+        try:
+            content = _call_llm(agent.name, sys_prompt, usr_prompt, model=agent.model or "gpt-4o")
+            post = Post(
+                problem_id=problem_id,
+                agent_id=agent.id,
+                round=current_round,
+                content=content,
+            )
+            db.add(post)
+            db.flush()
+            results.append({"agent": agent.name, "status": "posted"})
+        except Exception as e:
+            results.append({"agent": agent.name, "status": "error", "reason": str(e)})
+
+    db.commit()
+
+    return {
+        "success": True,
+        "data": {
+            "round": current_round,
+            "results": results,
+        },
         "error": None,
     }
