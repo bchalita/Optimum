@@ -257,12 +257,6 @@ def advance_round(
 ):
     problem = _get_problem_or_404(problem_id, db)
 
-    if problem.created_by != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the problem creator can advance the round.",
-        )
-
     next_status = NEXT_STATUS.get(problem.status)
     if next_status is None:
         raise HTTPException(
@@ -292,12 +286,6 @@ def submit_feedback(
     db: Session = Depends(get_db),
 ):
     problem = _get_problem_or_404(problem_id, db)
-
-    if problem.created_by != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the problem creator can submit feedback.",
-        )
 
     if problem.status != ProblemStatus.review:
         raise HTTPException(
@@ -333,12 +321,6 @@ def reset_problem(
     db: Session = Depends(get_db),
 ):
     problem = _get_problem_or_404(problem_id, db)
-
-    if problem.created_by != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the problem creator can reset the problem.",
-        )
 
     # Delete all posts
     db.query(Post).filter(Post.problem_id == problem.id).delete()
@@ -377,12 +359,6 @@ def assign_agent(
     db: Session = Depends(get_db),
 ):
     problem = _get_problem_or_404(problem_id, db)
-
-    if problem.created_by != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the problem creator can assign agents.",
-        )
 
     agent = db.query(Agent).filter(Agent.id == body.agent_id).first()
     if not agent:
@@ -447,12 +423,6 @@ def unassign_agent(
     db: Session = Depends(get_db),
 ):
     problem = _get_problem_or_404(problem_id, db)
-
-    if problem.created_by != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the problem creator can remove agents.",
-        )
 
     pa = (
         db.query(ProblemAgent)
@@ -596,12 +566,6 @@ def run_round(
     db: Session = Depends(get_db),
 ):
     problem = _get_problem_or_404(problem_id, db)
-
-    if problem.created_by != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the problem creator can run agents.",
-        )
 
     current_round = STATUS_ROUND.get(problem.status)
     if current_round is None:
@@ -887,12 +851,6 @@ def compile_formulation(
     _check_compile_limits(user.id)
 
     problem = _get_problem_or_404(problem_id, db)
-
-    if problem.created_by != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the problem creator can compile the formulation.",
-        )
 
     # Must have round 3 posts
     r3_posts = (
