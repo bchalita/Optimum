@@ -553,7 +553,7 @@ def _call_llm(agent_name: str, system_prompt: str, user_prompt: str, model: str 
                 {"role": "developer", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            max_completion_tokens=max_tokens,
+            max_completion_tokens=max_tokens * 8,  # reasoning models need tokens for thinking + output
         )
     else:
         create_kwargs = dict(
