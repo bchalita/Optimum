@@ -299,6 +299,19 @@ def _migrate_add_column(engine, table, column, col_type="VARCHAR"):
         print(f"  Migration: added '{column}' to '{table}'")
 
 
+def _backfill_templates(engine):
+    """Mark demo user's problems as templates if they aren't already."""
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        result = conn.execute(text(
+            "UPDATE problems SET is_template = TRUE "
+            "WHERE created_by IN (SELECT id FROM users WHERE email = 'demo@optimum.app') "
+            "AND (is_template IS NULL OR is_template = FALSE)"
+        ))
+        if result.rowcount > 0:
+            print(f"  Migration: marked {result.rowcount} demo problems as templates")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -306,6 +319,7 @@ async def lifespan(app: FastAPI):
     _migrate_add_column(engine, "agents", "owner_id", "VARCHAR")
     _migrate_add_column(engine, "problem_agents", "role", "VARCHAR DEFAULT 'general'")
     _migrate_add_column(engine, "problems", "is_template", "BOOLEAN DEFAULT FALSE")
+    _backfill_templates(engine)
     seed_database()
     seed_formulations()
     yield
