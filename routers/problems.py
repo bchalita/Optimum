@@ -566,7 +566,14 @@ def _call_llm(agent_name: str, system_prompt: str, user_prompt: str, model: str 
             temperature=0.7,
         )
     response = client.chat.completions.create(**create_kwargs)
-    return response.choices[0].message.content.strip()
+    msg = response.choices[0].message
+    text = msg.content or ""
+    # Some reasoning models put output in a separate field
+    if not text and hasattr(msg, "refusal") and msg.refusal:
+        text = f"[Model refused: {msg.refusal}]"
+    if not text:
+        text = f"[No content returned by {model}. finish_reason={response.choices[0].finish_reason}]"
+    return text.strip()
 
 
 @router.post("/{problem_id}/run-round")
