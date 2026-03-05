@@ -85,6 +85,19 @@ def get_current_user(
     return user
 
 
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """Like get_current_user but returns None instead of raising if not authenticated."""
+    if credentials is None:
+        return None
+    user_id = decode_access_token(credentials.credentials)
+    if user_id is None:
+        return None
+    return db.query(User).filter(User.id == user_id).first()
+
+
 def resolve_agent(api_key: Optional[str], db: Session) -> Agent:
     if not api_key:
         raise HTTPException(

@@ -83,6 +83,7 @@ class Problem(Base):
     created_at = Column(DateTime, default=utcnow)
     created_by = Column(String, ForeignKey("users.id"), nullable=False)
     human_feedback = Column(Text, nullable=True)
+    is_template = Column(Boolean, default=False)
 
     creator = relationship("User", back_populates="problems")
     posts = relationship("Post", back_populates="problem", cascade="all, delete-orphan")

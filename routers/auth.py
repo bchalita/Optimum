@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User
+from models import User, Problem, Post, ProblemAgent, ProblemStatus
 from auth import hash_password, verify_password, create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -75,6 +75,9 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account not confirmed. Check your email for a confirmation link.",
         )
+    # Clone template problems for first-time users
+    _clone_templates_if_needed(user, db)
+
     token = create_access_token(user.id)
     return {
         "success": True,
@@ -84,6 +87,77 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         },
         "error": None,
     }
+
+
+def _clone_templates_if_needed(user: User, db: Session):
+    """Clone all template problems for a user who doesn't have any yet."""
+    # Skip for demo user (they own the templates)
+    if user.email == "demo@optimum.app":
+        return
+
+    # Check if user already has problems (cloned or created)
+    user_problem_count = db.query(Problem).filter(
+        Problem.created_by == user.id, Problem.is_template == False
+    ).count()
+    if user_problem_count > 0:
+        return  # already has problems, skip
+
+    # Get all template problems
+    templates = db.query(Problem).filter(Problem.is_template == True).all()
+    if not templates:
+        return
+
+    for template in templates:
+        # Clone the problem
+        new_problem = Problem(
+            id=str(uuid.uuid4()),
+            title=template.title,
+            description=template.description,
+            status=ProblemStatus.open,
+            created_by=user.id,
+            is_template=False,
+        )
+        db.add(new_problem)
+        db.flush()
+
+        # Clone posts (e.g., seed round-1 posts on the delivery problem)
+        template_posts = (
+            db.query(Post)
+            .filter(Post.problem_id == template.id)
+            .order_by(Post.round, Post.created_at)
+            .all()
+        )
+        old_to_new_post_id = {}
+        for post in template_posts:
+            new_post_id = str(uuid.uuid4())
+            old_to_new_post_id[post.id] = new_post_id
+            new_post = Post(
+                id=new_post_id,
+                problem_id=new_problem.id,
+                agent_id=post.agent_id,
+                round=post.round,
+                content=post.content,
+                reply_to=old_to_new_post_id.get(post.reply_to) if post.reply_to else None,
+                system_generated=post.system_generated,
+            )
+            db.add(new_post)
+
+        # Clone agent assignments
+        template_agents = (
+            db.query(ProblemAgent)
+            .filter(ProblemAgent.problem_id == template.id)
+            .all()
+        )
+        for pa in template_agents:
+            new_pa = ProblemAgent(
+                id=str(uuid.uuid4()),
+                problem_id=new_problem.id,
+                agent_id=pa.agent_id,
+                role=pa.role,
+            )
+            db.add(new_pa)
+
+    db.commit()
 
 
 @router.get("/confirm/{token}")

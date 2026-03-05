@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Problem, Post, ProblemStatus, User, Agent, ProblemAgent, AgentRole, FormulationTemplate
-from auth import get_current_user
+from auth import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/problems", tags=["problems"])
 
@@ -150,8 +150,35 @@ def list_roles():
 
 
 @router.get("")
-def list_problems(db: Session = Depends(get_db)):
-    problems = db.query(Problem).order_by(Problem.created_at.desc()).all()
+def list_problems(
+    user: User = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    if user:
+        # Logged in: show user's own problems (clones + created)
+        # Demo user sees templates directly; others see their clones
+        if user.email == "demo@optimum.app":
+            problems = (
+                db.query(Problem)
+                .filter(Problem.created_by == user.id)
+                .order_by(Problem.created_at.desc())
+                .all()
+            )
+        else:
+            problems = (
+                db.query(Problem)
+                .filter(Problem.created_by == user.id, Problem.is_template == False)
+                .order_by(Problem.created_at.desc())
+                .all()
+            )
+    else:
+        # Anonymous: show templates as preview
+        problems = (
+            db.query(Problem)
+            .filter(Problem.is_template == True)
+            .order_by(Problem.created_at.desc())
+            .all()
+        )
     return {
         "success": True,
         "data": [_serialize_problem(p) for p in problems],

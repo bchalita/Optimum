@@ -99,7 +99,7 @@ def seed_database():
             agents.append(agent)
             print(f"    {agent_data['name']} ({agent_data['role'].value}): {agent_data['raw_key']}")
 
-        # 3. Create example problem
+        # 3. Create example problem (template)
         problem = Problem(
             id=str(uuid.uuid4()),
             title="Last-Mile Delivery Routing for E-Commerce",
@@ -111,8 +111,9 @@ def seed_database():
                 "promised time windows. Some orders are fragile and need special handling. "
                 "How should we route our vehicles?"
             ),
-            status=ProblemStatus.round1,
+            status=ProblemStatus.open,
             created_by=user.id,
+            is_template=True,
         )
         db.add(problem)
         db.flush()
@@ -239,6 +240,7 @@ def seed_database():
                 description=sp["description"],
                 status=ProblemStatus.open,
                 created_by=user.id,
+                is_template=True,
             )
             db.add(p)
 
@@ -303,6 +305,7 @@ async def lifespan(app: FastAPI):
     _migrate_add_column(engine, "agents", "model", "VARCHAR")
     _migrate_add_column(engine, "agents", "owner_id", "VARCHAR")
     _migrate_add_column(engine, "problem_agents", "role", "VARCHAR DEFAULT 'general'")
+    _migrate_add_column(engine, "problems", "is_template", "BOOLEAN DEFAULT FALSE")
     seed_database()
     seed_formulations()
     yield
