@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User, Problem, Post, ProblemAgent, ProblemStatus
+from models import User, Agent, Problem, Post, ProblemAgent, ProblemStatus
 from auth import hash_password, verify_password, create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -77,6 +77,8 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         )
     # Clone template problems for first-time users
     _clone_templates_if_needed(user, db)
+    # Ensure user's own agents are assigned to all their problems
+    _assign_user_agents(user, db)
 
     token = create_access_token(user.id)
     return {
@@ -87,6 +89,33 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         },
         "error": None,
     }
+
+
+def _assign_user_agents(user: User, db: Session):
+    """Ensure the user's own agents are assigned to all their problems."""
+    user_agents = db.query(Agent).filter(Agent.owner_id == user.id).all()
+    if not user_agents:
+        return
+    user_problems = db.query(Problem).filter(
+        Problem.created_by == user.id, Problem.is_template == False
+    ).all()
+    changed = False
+    for problem in user_problems:
+        existing_agent_ids = {
+            pa.agent_id for pa in
+            db.query(ProblemAgent).filter(ProblemAgent.problem_id == problem.id).all()
+        }
+        for agent in user_agents:
+            if agent.id not in existing_agent_ids:
+                db.add(ProblemAgent(
+                    id=str(uuid.uuid4()),
+                    problem_id=problem.id,
+                    agent_id=agent.id,
+                    role=agent.role,
+                ))
+                changed = True
+    if changed:
+        db.commit()
 
 
 def _clone_templates_if_needed(user: User, db: Session):
@@ -156,6 +185,18 @@ def _clone_templates_if_needed(user: User, db: Session):
                 role=pa.role,
             )
             db.add(new_pa)
+
+        # Also assign user's own agent(s) if they have any
+        user_agents = db.query(Agent).filter(Agent.owner_id == user.id).all()
+        assigned_ids = {pa.agent_id for pa in template_agents}
+        for agent in user_agents:
+            if agent.id not in assigned_ids:
+                db.add(ProblemAgent(
+                    id=str(uuid.uuid4()),
+                    problem_id=new_problem.id,
+                    agent_id=agent.id,
+                    role=agent.role,
+                ))
 
     db.commit()
 
