@@ -101,12 +101,15 @@ def _assign_user_agents(user: User, db: Session):
     ).all()
     changed = False
     for problem in user_problems:
-        existing_agent_ids = {
-            pa.agent_id for pa in
-            db.query(ProblemAgent).filter(ProblemAgent.problem_id == problem.id).all()
-        }
+        existing = db.query(ProblemAgent).filter(ProblemAgent.problem_id == problem.id).all()
+        existing_agent_ids = {pa.agent_id for pa in existing}
         for agent in user_agents:
             if agent.id not in existing_agent_ids:
+                # Swap out any seed agent holding this role slot
+                occupant = next((pa for pa in existing if pa.role == agent.role), None)
+                if occupant:
+                    db.delete(occupant)
+                    existing = [pa for pa in existing if pa.id != occupant.id]
                 db.add(ProblemAgent(
                     id=str(uuid.uuid4()),
                     problem_id=problem.id,
@@ -186,11 +189,20 @@ def _clone_templates_if_needed(user: User, db: Session):
             )
             db.add(new_pa)
 
-        # Also assign user's own agent(s) if they have any
+        # Also assign user's own agent(s), swapping out seed agents in same role
         user_agents = db.query(Agent).filter(Agent.owner_id == user.id).all()
         assigned_ids = {pa.agent_id for pa in template_agents}
+        cloned_assignments = (
+            db.query(ProblemAgent)
+            .filter(ProblemAgent.problem_id == new_problem.id)
+            .all()
+        )
         for agent in user_agents:
             if agent.id not in assigned_ids:
+                occupant = next((pa for pa in cloned_assignments if pa.role == agent.role), None)
+                if occupant:
+                    db.delete(occupant)
+                    cloned_assignments = [pa for pa in cloned_assignments if pa.id != occupant.id]
                 db.add(ProblemAgent(
                     id=str(uuid.uuid4()),
                     problem_id=new_problem.id,

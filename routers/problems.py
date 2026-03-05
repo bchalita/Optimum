@@ -391,13 +391,29 @@ def assign_agent(
             detail=f"Agent '{agent.name}' is already assigned to this problem as '{existing_agent.role.value}'.",
         )
 
+    # If role slot is taken, swap out the old agent
+    existing_role = (
+        db.query(ProblemAgent)
+        .filter(ProblemAgent.problem_id == problem_id, ProblemAgent.role == assign_role)
+        .first()
+    )
+    replaced_name = None
+    if existing_role:
+        replaced_name = existing_role.agent.name if existing_role.agent else None
+        db.delete(existing_role)
+        db.flush()
+
     pa = ProblemAgent(problem_id=problem_id, agent_id=body.agent_id, role=assign_role)
     db.add(pa)
     db.commit()
 
+    msg = f"Assigned '{agent.name}' as {assign_role.value}."
+    if replaced_name:
+        msg = f"Replaced '{replaced_name}' with '{agent.name}' as {assign_role.value}."
+
     return {
         "success": True,
-        "data": {**_serialize_agent(agent), "assigned_role": assign_role.value},
+        "data": {**_serialize_agent(agent), "assigned_role": assign_role.value, "message": msg},
         "error": None,
     }
 
