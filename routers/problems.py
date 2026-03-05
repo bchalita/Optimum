@@ -379,19 +379,6 @@ def assign_agent(
                 detail=f"Invalid role '{body.role}'. Valid roles: {valid}",
             )
 
-    # Check if this role slot is already filled
-    existing_role = (
-        db.query(ProblemAgent)
-        .filter(ProblemAgent.problem_id == problem_id, ProblemAgent.role == assign_role)
-        .first()
-    )
-    if existing_role:
-        existing_name = existing_role.agent.name if existing_role.agent else "unknown"
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Role '{assign_role.value}' is already filled by '{existing_name}'. Remove them first.",
-        )
-
     # Check if agent is already assigned (any role)
     existing_agent = (
         db.query(ProblemAgent)
