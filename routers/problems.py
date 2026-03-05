@@ -544,19 +544,27 @@ def _call_llm(agent_name: str, system_prompt: str, user_prompt: str, model: str 
         )
     from openai import OpenAI
     client = OpenAI(api_key=api_key)
-    is_reasoning = any(r in model for r in ["o1", "o3", "5.2", "5-2"])
-    create_kwargs = dict(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    )
+    is_reasoning = any(r in model for r in ["o1", "o3", "gpt-5"])
     if is_reasoning:
-        create_kwargs["max_completion_tokens"] = max_tokens
+        # Reasoning models: no system role, no temperature, use max_completion_tokens
+        create_kwargs = dict(
+            model=model,
+            messages=[
+                {"role": "developer", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_completion_tokens=max_tokens,
+        )
     else:
-        create_kwargs["max_tokens"] = max_tokens
-        create_kwargs["temperature"] = 0.7
+        create_kwargs = dict(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=max_tokens,
+            temperature=0.7,
+        )
     response = client.chat.completions.create(**create_kwargs)
     return response.choices[0].message.content.strip()
 
