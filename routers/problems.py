@@ -391,25 +391,24 @@ def assign_agent(
             detail=f"Agent '{agent.name}' is already assigned to this problem as '{existing_agent.role.value}'.",
         )
 
-    # If role slot is taken, swap out the old agent
+    # Reject if role slot is already taken
     existing_role = (
         db.query(ProblemAgent)
         .filter(ProblemAgent.problem_id == problem_id, ProblemAgent.role == assign_role)
         .first()
     )
-    replaced_name = None
     if existing_role:
-        replaced_name = existing_role.agent.name if existing_role.agent else None
-        db.delete(existing_role)
-        db.flush()
+        existing_name = existing_role.agent.name if existing_role.agent else "unknown"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Role '{assign_role.value}' is already filled by '{existing_name}'. Remove them first.",
+        )
 
     pa = ProblemAgent(problem_id=problem_id, agent_id=body.agent_id, role=assign_role)
     db.add(pa)
     db.commit()
 
     msg = f"Assigned '{agent.name}' as {assign_role.value}."
-    if replaced_name:
-        msg = f"Replaced '{replaced_name}' with '{agent.name}' as {assign_role.value}."
 
     return {
         "success": True,
@@ -584,24 +583,34 @@ def run_round(
         .all()
     )
 
-    # Auto-assign if no agents assigned: pick random agents to fill all 4 role slots
-    if not assignments:
+    # Auto-fill empty role slots with available agents
+    filled_roles = {pa.role for pa in assignments}
+    all_roles = {AgentRole.clarifier, AgentRole.formulator, AgentRole.critic, AgentRole.domain_expert}
+    empty_roles = all_roles - filled_roles
+    if empty_roles:
         import random
+        assigned_agent_ids = {pa.agent_id for pa in assignments}
         all_agents = db.query(Agent).all()
-        if not all_agents:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No agents registered on the platform.",
-            )
-        needed_roles = [AgentRole.clarifier, AgentRole.formulator, AgentRole.critic, AgentRole.domain_expert]
-        available = list(all_agents)
-        random.shuffle(available)
-        for role in needed_roles:
-            if not available:
-                break
-            agent = available.pop(0)
-            pa = ProblemAgent(problem_id=problem_id, agent_id=agent.id, role=role)
-            db.add(pa)
+        # Prioritize user's own agents for their matching role
+        user_agents = [a for a in all_agents if a.owner_id == user.id and a.id not in assigned_agent_ids]
+        for ua in user_agents:
+            if ua.role in empty_roles:
+                db.add(ProblemAgent(problem_id=problem_id, agent_id=ua.id, role=ua.role))
+                assigned_agent_ids.add(ua.id)
+                empty_roles.discard(ua.role)
+        # Fill remaining empty slots from other agents
+        pool = [a for a in all_agents if a.id not in assigned_agent_ids]
+        random.shuffle(pool)
+        for role in list(empty_roles):
+            # Prefer agents whose default role matches
+            match = next((a for a in pool if a.role == role), None)
+            if match:
+                pool.remove(match)
+            else:
+                match = pool.pop(0) if pool else None
+            if match:
+                db.add(ProblemAgent(problem_id=problem_id, agent_id=match.id, role=role))
+                assigned_agent_ids.add(match.id)
         db.flush()
         assignments = (
             db.query(ProblemAgent)
